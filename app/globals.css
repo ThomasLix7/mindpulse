@@ -62,3 +62,11 @@ a {
   --background: #0a0a0a;
   --foreground: #ededed;
 }
+
+.ai-response {
+  transition: opacity 0.1s ease-in-out;
+}
+
+.ai-response:not(:last-child) {
+  margin-bottom: 0.5rem;
+}
