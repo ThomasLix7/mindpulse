@@ -40,3 +40,25 @@ a {
     color-scheme: dark;
   }
 }
+
+.chakra-ui {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+.chakra-ui.dark {
+  color-scheme: dark;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+.chakra-ui.light {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+.chakra-ui.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
