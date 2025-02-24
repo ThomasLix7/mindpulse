@@ -7,19 +7,58 @@ export default function Chat() {
   const [history, setHistory] = useState<Array<{ user: string; ai: string }>>(
     []
   );
+  const [currentAiResponse, setCurrentAiResponse] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: input, sessionId: "user-session" }),
-    });
-
-    const { text } = await res.json();
-    setHistory([...history, { user: input, ai: text }]);
+    const userMessage = input;
     setInput("");
+    setHistory((prev) => [...prev, { user: userMessage, ai: "" }]);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMessage,
+          sessionId: "user-session",
+        }),
+      });
+
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let aiResponse = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process character by character
+        while (buffer.length > 0) {
+          const char = buffer[0];
+          aiResponse += char;
+          buffer = buffer.slice(1);
+
+          // Use microtask timing for instant updates
+          Promise.resolve().then(() => {
+            setHistory((prev) => {
+              const last = prev[prev.length - 1];
+              return [
+                ...prev.slice(0, -1),
+                { user: last.user, ai: aiResponse },
+              ];
+            });
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Stream error:", e);
+    }
   };
 
   return (

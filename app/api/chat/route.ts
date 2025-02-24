@@ -36,12 +36,26 @@ export async function POST(req: Request) {
       history: getSessionHistory(sessionId),
     });
 
-    const result = await chatSession.sendMessage(message);
-    const text = result.response.text();
+    // Create a stream
+    const stream = new ReadableStream({
+      async start(controller) {
+        const result = await chatSession.sendMessageStream(message);
 
-    updateSessionHistory(sessionId, message, text);
+        for await (const chunk of result.stream) {
+          const text = chunk.text();
+          controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
+        }
+        controller.close();
+      },
+    });
 
-    return NextResponse.json({ text });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (e: any) {
     console.error("API Error:", e);
     return NextResponse.json(
