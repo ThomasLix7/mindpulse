@@ -41,19 +41,34 @@ export default function Chat() {
         // Process character by character
         while (buffer.length > 0) {
           const char = buffer[0];
-          aiResponse += char;
           buffer = buffer.slice(1);
 
-          // Use microtask timing for instant updates
-          Promise.resolve().then(() => {
-            setHistory((prev) => {
-              const last = prev[prev.length - 1];
-              return [
-                ...prev.slice(0, -1),
-                { user: last.user, ai: aiResponse },
-              ];
-            });
-          });
+          // Check if we're at the start of a new SSE event
+          if (char === "d" && buffer.startsWith("ata: ")) {
+            // Skip past "data: " (5 characters)
+            buffer = buffer.slice(5);
+            const endIndex = buffer.indexOf("\n\n");
+            if (endIndex === -1) continue;
+
+            const jsonStr = buffer.slice(0, endIndex);
+            buffer = buffer.slice(endIndex + 2);
+
+            try {
+              const data = JSON.parse(jsonStr);
+              aiResponse += data.text;
+              Promise.resolve().then(() => {
+                setHistory((prev) => {
+                  const last = prev[prev.length - 1];
+                  return [
+                    ...prev.slice(0, -1),
+                    { user: last.user, ai: aiResponse },
+                  ];
+                });
+              });
+            } catch (e) {
+              console.error("JSON parse error:", e);
+            }
+          }
         }
       }
     } catch (e) {

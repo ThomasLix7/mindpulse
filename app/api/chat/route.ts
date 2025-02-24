@@ -43,7 +43,11 @@ export async function POST(req: Request) {
 
         for await (const chunk of result.stream) {
           const text = chunk.text();
-          controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
+          // Send each character individually
+          for (const char of text) {
+            controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
+            await new Promise((resolve) => setTimeout(resolve, 0.1)); // Optional delay
+          }
         }
         controller.close();
       },
