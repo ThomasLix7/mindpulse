@@ -11,35 +11,14 @@ export default function Chat() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Add temporary message immediately
-    setHistory([...history, { user: input, ai: "..." }]);
-
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: input,
-        sessionId: "user-session",
-        messages: history.map((m) => ({
-          // Send chat history
-          role: "user",
-          content: m.user,
-        })),
-      }),
+      body: JSON.stringify({ message: input, sessionId: "user-session" }),
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || "Failed to fetch");
-    }
-    const text = data.text || "No response from AI";
-
-    // Update last message with actual response
-    setHistory((prev) => {
-      const newHistory = [...prev];
-      newHistory[newHistory.length - 1].ai = text;
-      return newHistory;
-    });
+    const { text } = await res.json();
+    setHistory([...history, { user: input, ai: text }]);
     setInput("");
   };
 
