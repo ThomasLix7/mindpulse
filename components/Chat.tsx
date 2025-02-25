@@ -98,7 +98,9 @@ export default function Chat() {
       <VStack gap={4} mb={4}>
         {history.map((entry, i) => (
           <Box key={i} w="100%">
-            <Text fontWeight="bold">You: {entry.user}</Text>
+            <Text fontWeight="bold" color="purple.600">
+              You: {entry.user}
+            </Text>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
