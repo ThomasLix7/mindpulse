@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { model } from "@/lib/gemini";
 import { webTools } from "@/tools/webSearch";
+import { saveMemory, recallMemory } from "@/utils/memory";
 
 export const maxDuration = 30;
 
@@ -30,6 +31,30 @@ export async function POST(req: Request) {
         { error: "Message and session ID are required" },
         { status: 400 }
       );
+    }
+
+    // Retrieve relevant memories for this user and query
+    let relevantMemories = "";
+    try {
+      console.log(`Attempting to retrieve memories for session: ${sessionId}`);
+      const memories = await recallMemory(sessionId, message);
+      if (memories && memories.length > 0) {
+        relevantMemories =
+          "Previous relevant conversations:\n" +
+          memories.map((mem) => mem.pageContent).join("\n\n") +
+          "\n\n";
+        console.log(
+          `Successfully retrieved ${memories.length} memories for session: ${sessionId}`
+        );
+      } else {
+        console.log(`No relevant memories found for session: ${sessionId}`);
+      }
+    } catch (error) {
+      console.error(
+        "Error retrieving memories, continuing without them:",
+        error
+      );
+      // Continue without memories rather than failing the request
     }
 
     // Check if the required API key is available
@@ -96,10 +121,20 @@ export async function POST(req: Request) {
     // Create a stream
     const stream = new ReadableStream({
       async start(controller) {
-        // Enhance the message with web search results if available
-        const enhancedMessage = searchResults
-          ? `${message}\n\nHere are some web search results that might help answer this query with the latest information:\n${searchResults}`
-          : message;
+        // Enhance the message with both memories and web search results
+        const systemContext = `You are a helpful AI assistant that remembers past conversations to provide more personalized responses.`;
+
+        const enhancedMessage = `${systemContext}
+        
+${relevantMemories ? relevantMemories : ""}
+
+${message}
+
+${
+  searchResults
+    ? `Here are some web search results that might help answer this query with the latest information:\n${searchResults}`
+    : ""
+}`;
 
         const result = await chatSession.sendMessageStream(enhancedMessage);
         let fullResponse = "";
@@ -117,6 +152,20 @@ export async function POST(req: Request) {
 
         // Update session history after the full response is received
         updateSessionHistory(sessionId, message, fullResponse);
+
+        // Save the conversation to long-term memory
+        try {
+          console.log(`Attempting to save memory for session: ${sessionId}`);
+          const success = await saveMemory(sessionId, message, fullResponse);
+          if (success) {
+            console.log(`Memory saved successfully for session: ${sessionId}`);
+          } else {
+            console.warn(`Memory could not be saved for session: ${sessionId}`);
+          }
+        } catch (error) {
+          console.error("Error saving memory, continuing anyway:", error);
+          // Continue even if memory saving fails
+        }
 
         controller.close();
       },

@@ -18,16 +18,34 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-export const vectorStore = await PGVectorStore.initialize(embeddings, {
-  postgresConnectionOptions: {
-    connectionString: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    ssl: { rejectUnauthorized: false },
-  },
-  tableName: "ai_memories",
-  columns: {
-    idColumnName: "id",
-    vectorColumnName: "embedding",
-    contentColumnName: "content",
-    metadataColumnName: "metadata",
-  },
-});
+// Extract the project reference from the Supabase URL
+const projectRef = supabaseUrl
+  ?.replace("https://", "")
+  .replace(".supabase.co", "");
+
+// Create a function to initialize the vector store with proper error handling
+export async function getVectorStore() {
+  try {
+    // Use Supavisor in transaction mode (port 6543) which is optimal for serverless functions
+    const connectionString = `postgresql://postgres.${projectRef}:${supabaseKey}@aws-0-us-east-1.pooler.supabase.com:6543/postgres`;
+
+    const pgvectorStore = await PGVectorStore.initialize(embeddings, {
+      postgresConnectionOptions: {
+        connectionString: connectionString,
+        ssl: { rejectUnauthorized: false },
+      },
+      tableName: "ai_memories",
+      columns: {
+        idColumnName: "id",
+        vectorColumnName: "embedding",
+        contentColumnName: "content",
+        metadataColumnName: "metadata",
+      },
+    });
+
+    return pgvectorStore;
+  } catch (error) {
+    console.error("Error initializing vector store:", error);
+    throw error;
+  }
+}

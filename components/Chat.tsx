@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Input,
@@ -19,18 +19,54 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 
+// Generate a unique session ID for the user
+function generateSessionId() {
+  return `session-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
+}
+
 export default function Chat() {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<Array<{ user: string; ai: string }>>(
     []
   );
-  const [currentAiResponse, setCurrentAiResponse] = useState("");
+  const [sessionId, setSessionId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+
+  // Initialize or retrieve session ID from localStorage
+  useEffect(() => {
+    const storedSessionId = localStorage.getItem("mindpulse-session-id");
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+    } else {
+      const newSessionId = generateSessionId();
+      localStorage.setItem("mindpulse-session-id", newSessionId);
+      setSessionId(newSessionId);
+    }
+
+    // Try to load previous chat history from localStorage
+    const storedHistory = localStorage.getItem("mindpulse-chat-history");
+    if (storedHistory) {
+      try {
+        setHistory(JSON.parse(storedHistory));
+      } catch (e) {
+        console.error("Error parsing stored chat history:", e);
+      }
+    }
+  }, []);
+
+  // Save chat history to localStorage whenever it changes
+  useEffect(() => {
+    if (history.length > 0) {
+      localStorage.setItem("mindpulse-chat-history", JSON.stringify(history));
+    }
+  }, [history]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const userMessage = input;
     setInput("");
     setHistory((prev) => [...prev, { user: userMessage, ai: "" }]);
+    setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
@@ -38,7 +74,7 @@ export default function Chat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage,
-          sessionId: "user-session",
+          sessionId: sessionId,
         }),
       });
 
@@ -90,6 +126,8 @@ export default function Chat() {
       }
     } catch (e) {
       console.error("Stream error:", e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -257,8 +295,9 @@ export default function Chat() {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask me anything..."
           mb={2}
+          disabled={loading}
         />
-        <Button type="submit" colorScheme="blue">
+        <Button type="submit" colorScheme="blue" isLoading={loading}>
           Send
         </Button>
       </form>
