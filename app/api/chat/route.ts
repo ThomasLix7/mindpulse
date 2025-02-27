@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { model } from "@/lib/gemini";
 import { webTools } from "@/tools/webSearch";
 import { saveMemory, recallMemory } from "@/utils/memory";
+import { createServerClient } from "@/utils/supabase-server";
 
 export const maxDuration = 30;
 
@@ -24,7 +25,9 @@ function updateSessionHistory(
 
 export async function POST(req: Request) {
   try {
-    const { message, sessionId } = await req.json();
+    const { message, sessionId, userId } = await req.json();
+
+    console.log("Chat Route Received userId:", userId);
 
     if (!message?.trim() || !sessionId?.trim()) {
       return NextResponse.json(
@@ -33,15 +36,19 @@ export async function POST(req: Request) {
       );
     }
 
+    let validatedUserId = userId;
+
     // Retrieve relevant memories for this user and query
     let relevantMemories = "";
     try {
       console.log(`Attempting to retrieve memories for session: ${sessionId}`);
-      const memories = await recallMemory(sessionId, message);
+      const memories = await recallMemory(sessionId, message, validatedUserId);
       if (memories && memories.length > 0) {
         relevantMemories =
           "Previous relevant conversations:\n" +
-          memories.map((mem) => mem.pageContent).join("\n\n") +
+          memories
+            .map((mem: { pageContent: string }) => mem.pageContent)
+            .join("\n\n") +
           "\n\n";
         console.log(
           `Successfully retrieved ${memories.length} memories for session: ${sessionId}`
@@ -156,7 +163,12 @@ ${
         // Save the conversation to long-term memory
         try {
           console.log(`Attempting to save memory for session: ${sessionId}`);
-          const success = await saveMemory(sessionId, message, fullResponse);
+          const success = await saveMemory(
+            sessionId,
+            message,
+            fullResponse,
+            validatedUserId
+          );
           if (success) {
             console.log(`Memory saved successfully for session: ${sessionId}`);
           } else {
