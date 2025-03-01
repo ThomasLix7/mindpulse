@@ -542,15 +542,14 @@ export async function recallMemory(
             // Try direct personal info search
             const { data: nameData, error: nameError } = await supabaseClient
               .from("ai_memories")
-              .select("content, metadata, created_at")
+              .select("id, content, metadata, created_at")
               .eq("user_id", userId)
-              .eq("is_longterm", true)
-              .filter("metadata->>'isLongterm'", "eq", "true")
+              .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
               .or(
                 "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
               )
               .order("created_at", { ascending: false })
-              .limit(5);
+              .limit(10);
 
             if (!nameError && nameData && nameData.length > 0) {
               console.log(`Found ${nameData.length} personal info memories`);
@@ -679,14 +678,14 @@ export async function recallMemory(
             // Get personal details explicitly using new columns + content filtering
             const { data: nameData, error: nameError } = await vectorStore
               .from("ai_memories")
-              .select("content, metadata, created_at")
+              .select("id, content, metadata, created_at")
               .eq("user_id", userId)
-              .eq("is_longterm", true)
+              .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
               .or(
                 "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
               )
               .order("created_at", { ascending: false })
-              .limit(5);
+              .limit(10);
 
             if (!nameError && nameData && nameData.length > 0) {
               console.log(
@@ -767,40 +766,84 @@ export async function recallLongTermMemory(
       try {
         const supabaseClient = (vectorStore as any).client;
 
-        // Get long-term memories for this user using the new columns
-        const { data: userData, error: userError } = await supabaseClient
+        // Get long-term memories for this user using the is_longterm column
+        const { data: columnData, error: columnError } = await supabaseClient
           .from("ai_memories")
-          .select("content, metadata, created_at")
+          .select("id, content, metadata, created_at")
           .eq("user_id", userId)
           .eq("is_longterm", true)
           .order("created_at", { ascending: false })
-          .limit(10);
+          .limit(15);
 
-        if (userError) {
-          console.error("Error fetching long-term memories:", userError);
-          return [];
+        if (columnError) {
+          console.error(
+            "Error fetching long-term memories by column:",
+            columnError
+          );
         }
 
-        let results = userData || [];
+        // Get long-term memories using the metadata.isLongterm field for backward compatibility
+        const { data: metadataData, error: metadataError } =
+          await supabaseClient
+            .from("ai_memories")
+            .select("id, content, metadata, created_at")
+            .eq("user_id", userId)
+            .filter("metadata->>'isLongterm'", "eq", "true")
+            .order("created_at", { ascending: false })
+            .limit(15);
 
-        // Special handling for personal information queries
+        if (metadataError) {
+          console.error(
+            "Error fetching long-term memories by metadata:",
+            metadataError
+          );
+        }
+
+        // Combine results and remove duplicates
+        let combinedData: any[] = [];
+
+        if (columnData && columnData.length > 0) {
+          console.log(
+            `Found ${columnData.length} memories with is_longterm=true`
+          );
+          combinedData = [...columnData];
+        }
+
+        if (metadataData && metadataData.length > 0) {
+          console.log(
+            `Found ${metadataData.length} memories with metadata.isLongterm=true`
+          );
+          // Add only non-duplicate entries
+          metadataData.forEach((item: any) => {
+            if (!combinedData.some((existing) => existing.id === item.id)) {
+              combinedData.push(item);
+            }
+          });
+        }
+
+        console.log(`Combined long-term memories: ${combinedData.length}`);
+
+        // Use the combined data as our results
+        let results = combinedData || [];
+
+        // Special search for personal information
         if (
           query.toLowerCase().includes("name") ||
           query.toLowerCase().includes("who am i") ||
-          query.toLowerCase().includes("about me")
+          query.toLowerCase().includes("about me") ||
+          query.toLowerCase().includes("remember me")
         ) {
           // Try direct personal info search
           const { data: nameData, error: nameError } = await supabaseClient
             .from("ai_memories")
-            .select("content, metadata, created_at")
+            .select("id, content, metadata, created_at")
             .eq("user_id", userId)
-            .eq("is_longterm", true)
-            .filter("metadata->>'isLongterm'", "eq", "true")
+            .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
             .or(
               "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
             )
             .order("created_at", { ascending: false })
-            .limit(5);
+            .limit(10);
 
           if (!nameError && nameData && nameData.length > 0) {
             console.log(
@@ -850,21 +893,64 @@ export async function recallLongTermMemory(
         "⚠️ FALLBACK: Using direct Supabase queries for long-term memory (no embeddings)"
       );
       try {
-        // Get long-term memories for this user using the new columns
-        const { data: userData, error: userError } = await vectorStore
+        // Get long-term memories for this user using the is_longterm column
+        const { data: columnData, error: columnError } = await vectorStore
           .from("ai_memories")
-          .select("content, metadata, created_at")
+          .select("id, content, metadata, created_at")
           .eq("user_id", userId)
           .eq("is_longterm", true)
           .order("created_at", { ascending: false })
-          .limit(10);
+          .limit(15);
 
-        if (userError) {
-          console.error("Error fetching long-term memories:", userError);
-          return [];
+        if (columnError) {
+          console.error(
+            "Error fetching long-term memories by column:",
+            columnError
+          );
         }
 
-        let results = userData || [];
+        // Get long-term memories using the metadata.isLongterm field for backward compatibility
+        const { data: metadataData, error: metadataError } = await vectorStore
+          .from("ai_memories")
+          .select("id, content, metadata, created_at")
+          .eq("user_id", userId)
+          .filter("metadata->>'isLongterm'", "eq", "true")
+          .order("created_at", { ascending: false })
+          .limit(15);
+
+        if (metadataError) {
+          console.error(
+            "Error fetching long-term memories by metadata:",
+            metadataError
+          );
+        }
+
+        // Combine results and remove duplicates
+        let combinedData: any[] = [];
+
+        if (columnData && columnData.length > 0) {
+          console.log(
+            `Found ${columnData.length} memories with is_longterm=true`
+          );
+          combinedData = [...columnData];
+        }
+
+        if (metadataData && metadataData.length > 0) {
+          console.log(
+            `Found ${metadataData.length} memories with metadata.isLongterm=true`
+          );
+          // Add only non-duplicate entries
+          metadataData.forEach((item: any) => {
+            if (!combinedData.some((existing) => existing.id === item.id)) {
+              combinedData.push(item);
+            }
+          });
+        }
+
+        console.log(`Combined long-term memories: ${combinedData.length}`);
+
+        // Use the combined data as our results
+        let results = combinedData || [];
 
         // Special search for personal information
         if (
@@ -873,21 +959,23 @@ export async function recallLongTermMemory(
           query.toLowerCase().includes("about me") ||
           query.toLowerCase().includes("remember me")
         ) {
+          // Try direct personal info search
           const { data: nameData, error: nameError } = await vectorStore
             .from("ai_memories")
-            .select("content, metadata, created_at")
+            .select("id, content, metadata, created_at")
             .eq("user_id", userId)
-            .eq("is_longterm", true)
+            .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
             .or(
               "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
             )
             .order("created_at", { ascending: false })
-            .limit(5);
+            .limit(10);
 
           if (!nameError && nameData && nameData.length > 0) {
             console.log(
               `Found ${nameData.length} personal info memories in long-term memory`
             );
+
             // Prioritize personal info memories
             results = [
               ...nameData,

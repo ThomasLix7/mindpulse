@@ -108,7 +108,7 @@ export default function LongTermMemories() {
 
   if (loading) {
     return (
-      <Box textAlign="center" p={10}>
+      <Box textAlign="center" p={10} bg="gray.900" minH="100vh" color="white">
         <div className="spinner-grow" role="status"></div>
         <Text mt={4}>Loading...</Text>
       </Box>
@@ -117,8 +117,8 @@ export default function LongTermMemories() {
 
   if (!user) {
     return (
-      <Box p={6}>
-        <Box p={4} bg="yellow.100" borderRadius="md" color="yellow.800">
+      <Box p={6} bg="gray.900" minH="100vh" color="white">
+        <Box p={4} bg="yellow.900" borderRadius="md" color="yellow.100">
           <Heading size="md" mb={2}>
             Authentication Required
           </Heading>
@@ -132,7 +132,14 @@ export default function LongTermMemories() {
   }
 
   return (
-    <Box p={6} maxWidth="1000px" mx="auto">
+    <Box
+      p={6}
+      maxWidth="1000px"
+      mx="auto"
+      bg="gray.900"
+      minH="100vh"
+      color="white"
+    >
       <Heading mb={6}>Your Long-Term Memories</Heading>
       <Text mb={4}>
         This page shows memories that have been saved to your long-term memory
@@ -148,6 +155,8 @@ export default function LongTermMemories() {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search your memories (leave empty to see all memories)"
               flex="1"
+              bg="gray.800"
+              borderColor="gray.600"
             />
             <Button
               type="submit"
@@ -165,14 +174,14 @@ export default function LongTermMemories() {
             </Button>
           </Flex>
         </form>
-        <Text fontSize="sm" color="gray.500" mt={1}>
+        <Text fontSize="sm" color="gray.400" mt={1}>
           Tip: Leave the search box empty or click "Show All" to view all your
           saved memories
         </Text>
       </Box>
 
       {error && (
-        <Box p={4} bg="red.100" borderRadius="md" color="red.800" mb={6}>
+        <Box p={4} bg="red.900" borderRadius="md" color="red.100" mb={6}>
           <Text>{error}</Text>
         </Box>
       )}
@@ -183,7 +192,7 @@ export default function LongTermMemories() {
           <Text mt={2}>Loading memories...</Text>
         </Box>
       ) : memories.length === 0 ? (
-        <Box p={4} bg="blue.100" borderRadius="md" color="blue.800">
+        <Box p={4} bg="blue.900" borderRadius="md" color="blue.100">
           <Text>No long-term memories found. This could mean that:</Text>
           <Text mt={2}>
             1. You haven't saved any conversations to long-term memory yet.
@@ -209,15 +218,22 @@ export default function LongTermMemories() {
               borderRadius="md"
               boxShadow="md"
               border="1px"
-              borderColor="gray.200"
+              borderColor="gray.700"
+              bg="gray.800"
             >
-              <Text fontWeight="bold" color="blue.500" mb={1}>
+              <Text fontWeight="bold" color="blue.300" mb={1}>
                 You: {memory.userMessage}
               </Text>
-              <Box bg="gray.50" p={3} borderRadius="md" mb={2}>
+              <Box
+                bg="gray.700"
+                p={3}
+                borderRadius="md"
+                mb={2}
+                color="blue.200"
+              >
                 <ReactMarkdown>{memory.aiResponse}</ReactMarkdown>
               </Box>
-              <Text fontSize="sm" color="gray.500">
+              <Text fontSize="sm" color="gray.400">
                 Saved on: {formatDate(memory.timestamp)}
               </Text>
             </Box>
@@ -230,6 +246,7 @@ export default function LongTermMemories() {
           colorScheme="gray"
           onClick={() => router.push("/")}
           variant="outline"
+          _hover={{ bg: "gray.700" }}
         >
           Back to Chat
         </Button>
