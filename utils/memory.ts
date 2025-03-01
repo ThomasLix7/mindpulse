@@ -36,35 +36,6 @@ export async function saveMemory(
       },
     });
 
-    // Add detailed logging to debug the document structure
-    console.log("===== DOCUMENT METADATA INSPECTION =====");
-    console.log(
-      "Full document metadata:",
-      JSON.stringify(document.metadata, null, 2)
-    );
-
-    // Log the types of each field
-    console.log("METADATA TYPES:");
-    console.log(
-      `  conversationId: ${document.metadata.conversationId} (${typeof document
-        .metadata.conversationId})`
-    );
-    console.log(
-      `  userId: ${document.metadata.userId} (${typeof document.metadata
-        .userId})`
-    );
-    console.log(
-      `  timestamp: ${document.metadata.timestamp} (${typeof document.metadata
-        .timestamp})`
-    );
-    console.log(
-      `  type: ${document.metadata.type} (${typeof document.metadata.type})`
-    );
-    console.log(
-      `  isLongterm: ${document.metadata.isLongterm} (${typeof document.metadata
-        .isLongterm})`
-    );
-
     // Check if the conversationId is a valid UUID format
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -84,7 +55,6 @@ export async function saveMemory(
         console.error("Error message:", (error as Error).message);
         console.error("Error stack:", (error as Error).stack);
         console.error("Error type:", (error as object).constructor.name);
-        console.error("Error message:", (error as Error).message);
         console.error(
           "DATABASE ERROR DETECTED:\nMemory could not be saved for conversation:",
           conversationId
@@ -209,19 +179,299 @@ export async function saveMemory(
   }
 }
 
+/**
+ * Unified function to save something to long-term memory.
+ * This is a smart function that can either:
+ * 1. Create a new long-term memory
+ * 2. Promote an existing memory to long-term
+ * 3. Check for similar memories to avoid duplicates
+ *
+ * @param userId The user ID
+ * @param options Configuration object with the following options:
+ *    - memoryId: ID of an existing memory to promote to long-term
+ *    - userMessage: User message content to create a new long-term memory
+ *    - aiResponse: AI response content to create a new long-term memory
+ * @returns Promise<boolean> indicating success
+ *
+ * @example
+ * // To promote an existing memory:
+ * await saveToLongTermMemory("user123", { memoryId: "memory456" });
+ *
+ * // To create a new long-term memory:
+ * await saveToLongTermMemory("user123", {
+ *   userMessage: "What is your name?",
+ *   aiResponse: "My name is AI Assistant."
+ * });
+ */
 export async function saveToLongTermMemory(
+  userId: string,
+  options: {
+    memoryId?: string;
+    userMessage?: string;
+    aiResponse?: string;
+  }
+): Promise<boolean> {
+  try {
+    console.log(`Saving to long-term memory for user: ${userId}`, options);
+
+    // Case 1: Promoting an existing memory
+    if (options.memoryId) {
+      return await promoteExistingMemory(options.memoryId, userId);
+    }
+
+    // Case 2: Creating a new memory
+    if (options.userMessage && options.aiResponse) {
+      // Check for similar memories first
+      const similarMemoryId = await findSimilarMemory(
+        userId,
+        options.userMessage,
+        options.aiResponse
+      );
+
+      if (similarMemoryId) {
+        // Found similar memory, promote it instead
+        return await promoteExistingMemory(similarMemoryId, userId);
+      }
+
+      // No similar memory found, create new one
+      return await saveMemory(
+        `long-term-${userId}`,
+        options.userMessage,
+        options.aiResponse,
+        userId,
+        true
+      );
+    }
+
+    console.error("saveToLongTermMemory called with invalid options");
+    return false;
+  } catch (error) {
+    console.error("Error in saveToLongTermMemory:", error);
+    return false;
+  }
+}
+
+/**
+ * Helper function to find a similar memory
+ */
+async function findSimilarMemory(
   userId: string,
   userMessage: string,
   aiResponse: string
+): Promise<string | null> {
+  try {
+    const vectorStore = await getVectorStore();
+    if (!vectorStore || !("from" in vectorStore)) {
+      return null;
+    }
+
+    const content = `USER: ${userMessage}\nAI: ${aiResponse}`;
+
+    // Use vector search if available to find semantically similar memories
+    if (vectorStore instanceof SupabaseVectorStore) {
+      try {
+        // Try to use vector search to find similar memories
+        const results = await vectorStore.similaritySearch(content, 3, {
+          userId: userId,
+        });
+
+        if (results && results.length > 0) {
+          // Find the memory ID from the search results
+          const similarDoc = results[0];
+          const { data, error } = await (vectorStore as any).client
+            .from("ai_memories")
+            .select("id, content")
+            .eq("user_id", userId)
+            .ilike(
+              "content",
+              `%${similarDoc.pageContent.substring(
+                0,
+                Math.min(50, similarDoc.pageContent.length)
+              )}%`
+            )
+            .limit(1);
+
+          if (!error && data && data.length > 0) {
+            console.log(
+              `Found similar memory via vector search: ${data[0].id}`
+            );
+            return data[0].id;
+          }
+        }
+      } catch (err) {
+        console.log(
+          "Vector similarity search failed, falling back to text search",
+          err
+        );
+      }
+    }
+
+    // Fall back to text-based search
+    const { data: existingMemories, error: searchError } = await vectorStore
+      .from("ai_memories")
+      .select("id, content")
+      .eq("user_id", userId)
+      .ilike(
+        "content",
+        `%${userMessage.substring(0, Math.min(20, userMessage.length))}%`
+      )
+      .limit(5);
+
+    if (searchError || !existingMemories || existingMemories.length === 0) {
+      return null;
+    }
+
+    // Look for an exact or very similar match
+    const similarMemory = existingMemories.find((mem) => {
+      // Compare without whitespace and case sensitivity for better matching
+      const normalizedContent = mem.content.replace(/\s+/g, "").toLowerCase();
+      const normalizedSearch = content.replace(/\s+/g, "").toLowerCase();
+
+      // Check if contents are very similar (80% match or better)
+      return (
+        normalizedContent.includes(
+          normalizedSearch.substring(
+            0,
+            Math.floor(normalizedSearch.length * 0.8)
+          )
+        ) ||
+        normalizedSearch.includes(
+          normalizedContent.substring(
+            0,
+            Math.floor(normalizedContent.length * 0.8)
+          )
+        )
+      );
+    });
+
+    return similarMemory ? similarMemory.id : null;
+  } catch (error) {
+    console.error("Error finding similar memory:", error);
+    return null;
+  }
+}
+
+/**
+ * Helper function to promote an existing memory to long-term
+ */
+async function promoteExistingMemory(
+  memoryId: string,
+  userId: string
 ): Promise<boolean> {
-  // Simply call saveMemory with isLongTerm set to true and a special conversation ID
-  return saveMemory(
-    `long-term-${userId}`, // Using a predictable conversationId for long-term memories
-    userMessage,
-    aiResponse,
-    userId,
-    true
-  );
+  try {
+    console.log(`Promoting memory ${memoryId} to long-term for user ${userId}`);
+
+    const vectorStore = await getVectorStore();
+    if (!vectorStore) {
+      console.error("Vector store is null - initialization failed");
+      return false;
+    }
+
+    // Extract the Supabase client from the vector store
+    // This handles multiple possible structures
+    let client;
+    if ("from" in vectorStore) {
+      // Direct client case
+      client = vectorStore;
+      console.log("Using direct Supabase client");
+    } else if ("client" in vectorStore) {
+      // SupabaseVectorStore case
+      client = (vectorStore as any).client;
+      console.log("Using client from vectorStore.client");
+    } else {
+      console.error("Vector store has invalid structure - no client available");
+      console.log("Vector store type:", typeof vectorStore);
+      console.log("Vector store properties:", Object.keys(vectorStore));
+      return false;
+    }
+
+    if (!client || typeof client.from !== "function") {
+      console.error("Invalid Supabase client - missing 'from' method");
+      return false;
+    }
+
+    // First verify the memory belongs to this user
+    console.log(`Querying database for memory ID: ${memoryId}`);
+    const { data: memoryData, error: fetchError } = await client
+      .from("ai_memories")
+      .select("*")
+      .eq("id", memoryId)
+      .single();
+
+    if (fetchError) {
+      console.error("Error fetching memory to promote:", fetchError);
+      console.log("Memory ID that failed:", memoryId);
+      return false;
+    }
+
+    if (!memoryData) {
+      console.error(`Memory ID ${memoryId} not found in database`);
+      return false;
+    }
+
+    console.log(`Memory data found:`, {
+      id: memoryData.id,
+      content: memoryData.content
+        ? memoryData.content.substring(0, 50) + "..."
+        : null,
+      user_id: memoryData.user_id,
+      metadata_userId: memoryData.metadata?.userId,
+      is_longterm: memoryData.is_longterm,
+      metadata_isLongterm: memoryData.metadata?.isLongterm,
+    });
+
+    // Check if memory belongs to the user
+    const memoryUserId = memoryData.user_id || memoryData.metadata?.userId;
+    if (memoryUserId !== userId) {
+      console.error(
+        `Cannot promote memory: User ID mismatch. Memory belongs to ${memoryUserId}, but request came from ${userId}`
+      );
+      return false;
+    }
+
+    // If it's already a long-term memory, no need to update
+    if (
+      memoryData.is_longterm === true ||
+      memoryData.metadata?.isLongterm === true
+    ) {
+      console.log(`Memory ${memoryId} is already marked as long-term`);
+      return true;
+    }
+
+    // Carefully merge the metadata to avoid overwriting existing fields
+    const updatedMetadata = {
+      ...memoryData.metadata,
+      isLongterm: true,
+    };
+
+    console.log(
+      `Updating memory ${memoryId} with is_longterm=true and updated metadata`
+    );
+
+    // Update the memory to set is_longterm = true
+    const { error: updateError } = await client
+      .from("ai_memories")
+      .update({
+        is_longterm: true,
+        metadata: updatedMetadata,
+      })
+      .eq("id", memoryId);
+
+    if (updateError) {
+      console.error("Error promoting memory to long-term:", updateError);
+      return false;
+    }
+
+    console.log(`Successfully promoted memory ${memoryId} to long-term`);
+    return true;
+  } catch (error) {
+    console.error("Error promoting memory:", error);
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
+    return false;
+  }
 }
 
 export async function recallMemory(
@@ -248,17 +498,16 @@ export async function recallMemory(
       // Note: When using json fields, we need to use filter in a special way
       if (userId) {
         // This approach uses direct SQL filtering instead of the built-in filter object
-        // since our metadata is now stored as JSON
         try {
           const supabaseClient = (vectorStore as any).client;
 
-          // First try to get conversation-specific memories
+          // First try to get conversation-specific memories using the new columns
           const { data: conversationData, error: convError } =
             await supabaseClient
               .from("ai_memories")
-              .select("content, metadata")
-              .filter("metadata->>'conversationId'", "eq", conversationId)
-              .order("metadata->>'timestamp'", { ascending: false })
+              .select("content, metadata, created_at")
+              .eq("conversation_id", conversationId)
+              .order("created_at", { ascending: false })
               .limit(5);
 
           if (convError) {
@@ -268,13 +517,13 @@ export async function recallMemory(
 
           let allResults = conversationData || [];
 
-          // Also get long-term memories for this user
+          // Also get long-term memories for this user using the new columns
           const { data: longTermData, error: ltError } = await supabaseClient
             .from("ai_memories")
-            .select("content, metadata")
-            .filter("metadata->>'userId'", "eq", userId)
-            .filter("metadata->>'isLongterm'", "eq", "true")
-            .order("metadata->>'timestamp'", { ascending: false })
+            .select("content, metadata, created_at")
+            .eq("user_id", userId)
+            .eq("is_longterm", true)
+            .order("created_at", { ascending: false })
             .limit(5);
 
           if (!ltError && longTermData && longTermData.length > 0) {
@@ -293,13 +542,14 @@ export async function recallMemory(
             // Try direct personal info search
             const { data: nameData, error: nameError } = await supabaseClient
               .from("ai_memories")
-              .select("content, metadata")
+              .select("content, metadata, created_at")
+              .eq("user_id", userId)
+              .eq("is_longterm", true)
               .filter("metadata->>'isLongterm'", "eq", "true")
-              .filter("metadata->>'userId'", "eq", userId)
               .or(
                 "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
               )
-              .order("metadata->>'timestamp'", { ascending: false })
+              .order("created_at", { ascending: false })
               .limit(5);
 
             if (!nameError && nameData && nameData.length > 0) {
@@ -313,7 +563,7 @@ export async function recallMemory(
                     !nameData.some(
                       (p: any) =>
                         p.content === item.content &&
-                        p.metadata.timestamp === item.metadata.timestamp
+                        p.created_at === item.created_at
                     )
                 ),
               ];
@@ -325,7 +575,12 @@ export async function recallMemory(
             (item: any) =>
               new Document({
                 pageContent: item.content,
-                metadata: item.metadata || {},
+                metadata: {
+                  ...item.metadata,
+                  timestamp: item.created_at
+                    ? new Date(item.created_at).getTime()
+                    : Date.now(),
+                },
               })
           );
         } catch (error) {
@@ -339,9 +594,9 @@ export async function recallMemory(
           const supabaseClient = (vectorStore as any).client;
           const { data, error } = await supabaseClient
             .from("ai_memories")
-            .select("content, metadata")
-            .filter("metadata->>'conversationId'", "eq", conversationId)
-            .order("metadata->>'timestamp'", { ascending: false })
+            .select("content, metadata, created_at")
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: false })
             .limit(5);
 
           if (error) {
@@ -356,7 +611,12 @@ export async function recallMemory(
             (item: any) =>
               new Document({
                 pageContent: item.content,
-                metadata: item.metadata || {},
+                metadata: {
+                  ...item.metadata,
+                  timestamp: item.created_at
+                    ? new Date(item.created_at).getTime()
+                    : Date.now(),
+                },
               })
           );
         } catch (error) {
@@ -374,12 +634,12 @@ export async function recallMemory(
         "⚠️ FALLBACK: Using direct Supabase queries for memory recall (no embeddings)"
       );
       try {
-        // Start with conversation-based memories
+        // Start with conversation-based memories using the new columns
         const { data: conversationData, error: convError } = await vectorStore
           .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'conversationId'", "eq", conversationId)
-          .order("metadata->>'timestamp'", { ascending: false })
+          .select("content, metadata, created_at")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: false })
           .limit(5);
 
         if (convError) {
@@ -389,15 +649,15 @@ export async function recallMemory(
 
         let results = conversationData || [];
 
-        // If userId is provided, also fetch long-term memories
+        // If userId is provided, also fetch long-term memories using the new columns
         if (userId) {
           // Fetch long-term memories across all conversations
           const { data: longTermData, error: ltError } = await vectorStore
             .from("ai_memories")
-            .select("content, metadata")
-            .filter("metadata->>'userId'", "eq", userId)
-            .filter("metadata->>'isLongterm'", "eq", "true")
-            .order("metadata->>'timestamp'", { ascending: false })
+            .select("content, metadata, created_at")
+            .eq("user_id", userId)
+            .eq("is_longterm", true)
+            .order("created_at", { ascending: false })
             .limit(5);
 
           if (!ltError && longTermData) {
@@ -416,16 +676,16 @@ export async function recallMemory(
             query.toLowerCase().includes("about me") ||
             query.toLowerCase().includes("remember me")
           ) {
-            // Get personal details explicitly
+            // Get personal details explicitly using new columns + content filtering
             const { data: nameData, error: nameError } = await vectorStore
               .from("ai_memories")
-              .select("content, metadata")
-              .filter("metadata->>'userId'", "eq", userId)
-              .filter("metadata->>'isLongterm'", "eq", "true")
+              .select("content, metadata, created_at")
+              .eq("user_id", userId)
+              .eq("is_longterm", true)
               .or(
                 "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
               )
-              .order("metadata->>'timestamp'", { ascending: false })
+              .order("created_at", { ascending: false })
               .limit(5);
 
             if (!nameError && nameData && nameData.length > 0) {
@@ -440,7 +700,7 @@ export async function recallMemory(
                     !nameData.some(
                       (p) =>
                         p.content === item.content &&
-                        p.metadata.timestamp === item.metadata.timestamp
+                        p.created_at === item.created_at
                     )
                 ),
               ];
@@ -454,8 +714,7 @@ export async function recallMemory(
             index ===
             self.findIndex(
               (t) =>
-                t.content === item.content &&
-                t.metadata.timestamp === item.metadata.timestamp
+                t.content === item.content && t.created_at === item.created_at
             )
         );
 
@@ -464,7 +723,12 @@ export async function recallMemory(
           (item) =>
             new Document({
               pageContent: item.content,
-              metadata: item.metadata || {},
+              metadata: {
+                ...item.metadata,
+                timestamp: item.created_at
+                  ? new Date(item.created_at).getTime()
+                  : Date.now(),
+              },
             })
         );
       } catch (e) {
@@ -503,13 +767,13 @@ export async function recallLongTermMemory(
       try {
         const supabaseClient = (vectorStore as any).client;
 
-        // Get long-term memories for this user
+        // Get long-term memories for this user using the new columns
         const { data: userData, error: userError } = await supabaseClient
           .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'userId'", "eq", userId)
-          .filter("metadata->>'isLongterm'", "eq", "true")
-          .order("metadata->>'timestamp'", { ascending: false })
+          .select("content, metadata, created_at")
+          .eq("user_id", userId)
+          .eq("is_longterm", true)
+          .order("created_at", { ascending: false })
           .limit(10);
 
         if (userError) {
@@ -528,13 +792,14 @@ export async function recallLongTermMemory(
           // Try direct personal info search
           const { data: nameData, error: nameError } = await supabaseClient
             .from("ai_memories")
-            .select("content, metadata")
+            .select("content, metadata, created_at")
+            .eq("user_id", userId)
+            .eq("is_longterm", true)
             .filter("metadata->>'isLongterm'", "eq", "true")
-            .filter("metadata->>'userId'", "eq", userId)
             .or(
               "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
             )
-            .order("metadata->>'timestamp'", { ascending: false })
+            .order("created_at", { ascending: false })
             .limit(5);
 
           if (!nameError && nameData && nameData.length > 0) {
@@ -550,7 +815,7 @@ export async function recallLongTermMemory(
                   !nameData.some(
                     (p: any) =>
                       p.content === item.content &&
-                      p.metadata.timestamp === item.metadata.timestamp
+                      p.created_at === item.created_at
                   )
               ),
             ];
@@ -562,7 +827,12 @@ export async function recallLongTermMemory(
           (item: any) =>
             new Document({
               pageContent: item.content,
-              metadata: item.metadata || {},
+              metadata: {
+                ...item.metadata,
+                timestamp: item.created_at
+                  ? new Date(item.created_at).getTime()
+                  : Date.now(),
+              },
             })
         );
       } catch (error) {
@@ -580,13 +850,13 @@ export async function recallLongTermMemory(
         "⚠️ FALLBACK: Using direct Supabase queries for long-term memory (no embeddings)"
       );
       try {
-        // Get long-term memories for this user
+        // Get long-term memories for this user using the new columns
         const { data: userData, error: userError } = await vectorStore
           .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'userId'", "eq", userId)
-          .filter("metadata->>'isLongterm'", "eq", "true")
-          .order("metadata->>'timestamp'", { ascending: false })
+          .select("content, metadata, created_at")
+          .eq("user_id", userId)
+          .eq("is_longterm", true)
+          .order("created_at", { ascending: false })
           .limit(10);
 
         if (userError) {
@@ -605,13 +875,13 @@ export async function recallLongTermMemory(
         ) {
           const { data: nameData, error: nameError } = await vectorStore
             .from("ai_memories")
-            .select("content, metadata")
-            .filter("metadata->>'userId'", "eq", userId)
-            .filter("metadata->>'isLongterm'", "eq", "true")
+            .select("content, metadata, created_at")
+            .eq("user_id", userId)
+            .eq("is_longterm", true)
             .or(
               "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
             )
-            .order("metadata->>'timestamp'", { ascending: false })
+            .order("created_at", { ascending: false })
             .limit(5);
 
           if (!nameError && nameData && nameData.length > 0) {
@@ -626,7 +896,7 @@ export async function recallLongTermMemory(
                   !nameData.some(
                     (p: any) =>
                       p.content === item.content &&
-                      p.metadata.timestamp === item.metadata.timestamp
+                      p.created_at === item.created_at
                   )
               ),
             ];
@@ -638,7 +908,12 @@ export async function recallLongTermMemory(
           (item: any) =>
             new Document({
               pageContent: item.content,
-              metadata: item.metadata || {},
+              metadata: {
+                ...item.metadata,
+                timestamp: item.created_at
+                  ? new Date(item.created_at).getTime()
+                  : Date.now(),
+              },
             })
         );
       } catch (e) {

@@ -34,3 +34,67 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+# MindPulse
+
+## Long-Term Memory API
+
+This codebase includes a unified API for working with long-term memories:
+
+### Saving to Long-Term Memory
+
+The system provides a single unified API for long-term memory operations:
+
+```typescript
+// To save a new long-term memory
+const response = await fetch("/api/longTermMemory", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    userId: "user-123",
+    userMessage: "What's the capital of France?",
+    aiResponse: "The capital of France is Paris.",
+  }),
+});
+
+// To promote an existing memory to long-term
+const response = await fetch("/api/longTermMemory", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    userId: "user-123",
+    memoryId: "memory-456",
+  }),
+});
+```
+
+### Smart Features
+
+The API includes several smart features:
+
+1. **Duplicate Detection**: Before creating a new long-term memory, the system checks for similar existing memories and promotes them instead of creating duplicates.
+
+2. **Vector Search Integration**: Uses semantic vector search to find similar memories when available, falling back to text-based search.
+
+3. **Unified API**: A single function and API endpoint handles both creating new memories and promoting existing ones.
+
+4. **Metadata Management**: Automatically updates both the dedicated database columns and the metadata JSON for backward compatibility.
+
+### Internal API
+
+For direct use in your code:
+
+```typescript
+import { saveToLongTermMemory } from "@/utils/memory";
+
+// To create a new long-term memory
+await saveToLongTermMemory("user-123", {
+  userMessage: "What's the capital of France?",
+  aiResponse: "The capital of France is Paris.",
+});
+
+// To promote an existing memory to long-term
+await saveToLongTermMemory("user-123", {
+  memoryId: "memory-456",
+});
+```

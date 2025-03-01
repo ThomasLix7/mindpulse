@@ -567,32 +567,113 @@ export default function Chat() {
     }
 
     const message = conversation.history[messageIndex];
+    console.log(
+      `Saving message to long-term memory: "${message.user.substring(
+        0,
+        50
+      )}..."`
+    );
+    console.log(`Conversation ID: ${conversationId}`);
+    console.log(`User ID: ${user.id}`);
 
     // Set the saving indicator
     setSavingToLongTerm(messageIndex);
 
     try {
-      // Save directly using the chat API with isLongTerm flag
-      const chatResponse = await fetch("/api/chat", {
+      // Get the memory ID for this message
+      console.log("Step 1: Finding memory ID for this message...");
+      const findMemoryResponse = await fetch("/api/findMemory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: message.user,
           conversationId: conversationId,
+          userMessage: message.user,
           userId: user.id,
-          isLongTerm: true,
         }),
       });
 
-      if (chatResponse.ok) {
-        alert("Saved to long-term memory successfully!");
+      // Log the status code
+      console.log(`Find memory response status: ${findMemoryResponse.status}`);
+
+      if (!findMemoryResponse.ok) {
+        const errorData = await findMemoryResponse.json();
+        console.error("Error finding memory:", errorData);
+
+        if (findMemoryResponse.status === 404) {
+          alert(
+            "Could not find this message in the database. It may not have been properly saved."
+          );
+        } else {
+          alert(`Could not find memory: ${errorData.error || "Unknown error"}`);
+        }
+        return;
+      }
+
+      const findData = await findMemoryResponse.json();
+      console.log(`Step 2: Found memory ID: ${findData.memoryId}`);
+
+      if (!findData.memoryId) {
+        alert("Could not find the memory for this message");
+        return;
+      }
+
+      // Use the longTermMemory endpoint to promote it
+      console.log("Step 3: Promoting memory to long-term...");
+      const response = await fetch("/api/longTermMemory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memoryId: findData.memoryId,
+          userId: user.id,
+        }),
+      });
+
+      // Handle response
+      console.log(`Promotion response status: ${response.status}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          console.log("Successfully saved to long-term memory!");
+          alert("Successfully saved to long-term memory!");
+        } else {
+          console.error("API returned success: false", data);
+          alert(
+            `Failed to save: ${data.error || "Unknown error"}${
+              data.details ? ` - ${data.details}` : ""
+            }`
+          );
+        }
       } else {
-        const errorData = await chatResponse.json();
-        alert(`Failed to save: ${errorData.error || "Unknown error"}`);
+        try {
+          const errorData = await response.json();
+          console.error("Error promoting memory:", errorData);
+          // Handle the case where errorData might be empty
+          if (errorData && Object.keys(errorData).length > 0) {
+            alert(
+              `Failed to save: ${errorData.error || "Unknown error"}${
+                errorData.details ? ` - ${errorData.details}` : ""
+              }`
+            );
+          } else {
+            console.error("Empty error response received");
+            alert(
+              `Failed to save to long-term memory: Empty error response (status ${response.status})`
+            );
+          }
+        } catch (jsonError) {
+          console.error("Error parsing error response:", jsonError);
+          alert(
+            `Failed to save to long-term memory: Error status ${response.status}`
+          );
+        }
       }
     } catch (error) {
       console.error("Error saving to long-term memory:", error);
-      alert("Failed to save to long-term memory");
+      alert(
+        `Failed to save to long-term memory: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setSavingToLongTerm(null);
     }

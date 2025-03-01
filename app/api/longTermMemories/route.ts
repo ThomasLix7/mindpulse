@@ -46,14 +46,14 @@ export async function POST(request: Request) {
       query.toLowerCase() === "all memories"
     ) {
       try {
-        // Get all long-term memories directly from the database
+        // Get all long-term memories directly from the database using the new schema
         const supabaseServer = await createServerClient();
         const { data, error } = await supabaseServer
           .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'userId'", "eq", userId)
-          .filter("metadata->>'isLongterm'", "eq", "true")
-          .order("metadata->>'timestamp'", { ascending: false });
+          .select("content, metadata, created_at")
+          .eq("user_id", userId)
+          .eq("is_longterm", true)
+          .order("created_at", { ascending: false });
 
         if (error) {
           console.error("Database query error:", error);
@@ -83,7 +83,9 @@ export async function POST(request: Request) {
             if (parts.length !== 2) {
               return {
                 content,
-                timestamp: item.metadata.timestamp,
+                timestamp:
+                  item.metadata.timestamp ||
+                  new Date(item.created_at).getTime(),
               };
             }
 
@@ -93,14 +95,16 @@ export async function POST(request: Request) {
             return {
               userMessage,
               aiResponse,
-              timestamp: item.metadata.timestamp,
+              timestamp:
+                item.metadata.timestamp || new Date(item.created_at).getTime(),
               type: item.metadata.type || "chat",
             };
           } catch (error) {
             console.error("Error parsing memory:", error);
             return {
               content: item.content,
-              timestamp: item.metadata.timestamp,
+              timestamp:
+                item.metadata.timestamp || new Date(item.created_at).getTime(),
             };
           }
         });
@@ -122,7 +126,7 @@ export async function POST(request: Request) {
     const searchQuery = query || "personal information";
 
     try {
-      // Retrieve long-term memories
+      // Retrieve long-term memories - recallLongTermMemory has already been updated
       const memories = await recallLongTermMemory(userId, searchQuery);
 
       // Process the memories into a more readable format
