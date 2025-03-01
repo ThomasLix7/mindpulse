@@ -6,32 +6,51 @@ import { createServerClient } from "@/utils/supabase-server";
 
 export const maxDuration = 30;
 
-const sessionHistory = new Map<string, any[]>();
+// Cache for conversation histories
+const conversationHistory = new Map<string, any[]>();
 
-function getSessionHistory(sessionId: string) {
-  return sessionHistory.get(sessionId) || [];
+function getConversationHistory(conversationId: string) {
+  return conversationHistory.get(conversationId) || [];
 }
 
-function updateSessionHistory(
-  sessionId: string,
+function updateConversationHistory(
+  conversationId: string,
   userMessage: string,
   aiResponse: string
 ) {
-  const history = getSessionHistory(sessionId);
+  const history = getConversationHistory(conversationId);
   history.push({ role: "user", parts: [{ text: userMessage }] });
   history.push({ role: "model", parts: [{ text: aiResponse }] });
-  sessionHistory.set(sessionId, history);
+  conversationHistory.set(conversationId, history);
+}
+
+// Update the conversation's updated_at timestamp
+async function updateConversationTimestamp(conversationId: string) {
+  try {
+    const supabase = await createServerClient();
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+  } catch (error) {
+    console.error("Error updating conversation timestamp:", error);
+    // Continue anyway, this is not critical
+  }
 }
 
 export async function POST(req: Request) {
   try {
-    const { message, sessionId, userId } = await req.json();
+    const {
+      message,
+      conversationId,
+      userId,
+      isLongTerm = false,
+      enableWebSearch = true,
+    } = await req.json();
 
-    console.log("Chat Route Received userId:", userId);
-
-    if (!message?.trim() || !sessionId?.trim()) {
+    if (!message?.trim() || !conversationId?.trim()) {
       return NextResponse.json(
-        { error: "Message and session ID are required" },
+        { error: "Message and conversation ID are required" },
         { status: 400 }
       );
     }
@@ -41,20 +60,99 @@ export async function POST(req: Request) {
     // Retrieve relevant memories for this user and query
     let relevantMemories = "";
     try {
-      console.log(`Attempting to retrieve memories for session: ${sessionId}`);
-      const memories = await recallMemory(sessionId, message, validatedUserId);
-      if (memories && memories.length > 0) {
-        relevantMemories =
-          "Previous relevant conversations:\n" +
-          memories
-            .map((mem: { pageContent: string }) => mem.pageContent)
-            .join("\n\n") +
-          "\n\n";
-        console.log(
-          `Successfully retrieved ${memories.length} memories for session: ${sessionId}`
+      // Check if this is a personal information query
+      const isPersonalInfoQuery =
+        message.toLowerCase().includes("name") ||
+        message.toLowerCase().includes("who am i") ||
+        message.toLowerCase().includes("about me") ||
+        message.toLowerCase().includes("remember me");
+
+      // Get conversation-based and long-term memories
+      const memories = await recallMemory(
+        conversationId,
+        message,
+        validatedUserId
+      );
+
+      // For personal information queries, also directly check long-term memories
+      let longTermMemories: any[] = [];
+      if (isPersonalInfoQuery && validatedUserId) {
+        try {
+          const { recallLongTermMemory } = await import("@/utils/memory");
+          longTermMemories = await recallLongTermMemory(
+            validatedUserId,
+            message
+          );
+          console.log(
+            `Also checked long-term memories directly, found ${longTermMemories.length}`
+          );
+        } catch (error) {
+          console.error("Error retrieving long-term memories directly:", error);
+        }
+      }
+
+      // Combine all memories, removing duplicates
+      const allMemories = [
+        ...memories,
+        ...longTermMemories.filter(
+          (ltm) =>
+            !memories.some(
+              (m) =>
+                m.pageContent === ltm.pageContent &&
+                m.metadata.timestamp === ltm.metadata.timestamp
+            )
+        ),
+      ];
+
+      if (allMemories && allMemories.length > 0) {
+        // Check if there are memories with personal information
+        const personalMemories = allMemories.filter(
+          (mem) =>
+            mem.pageContent.toLowerCase().includes("my name is") ||
+            mem.pageContent.toLowerCase().includes("i am ") ||
+            mem.pageContent.toLowerCase().includes("call me ") ||
+            (mem.pageContent.toLowerCase().includes("name") &&
+              mem.pageContent.toLowerCase().includes("thomas"))
         );
+
+        console.log(
+          `Retrieved ${allMemories.length} total memories (${memories.length} from conversation, ${longTermMemories.length} from long-term storage)`
+        );
+
+        // Log if we found any long-term memories
+        const longTermMemoriesCount = allMemories.filter(
+          (mem) => mem.metadata.isLongterm === true
+        ).length;
+
+        if (longTermMemoriesCount > 0) {
+          console.log(
+            `Found ${longTermMemoriesCount} long-term memories marked as isLongterm=true`
+          );
+        }
+
+        // Format memories, putting personal information first
+        const formattedMemories = [
+          ...personalMemories.map((mem) => mem.pageContent),
+          ...allMemories
+            .filter((mem) => !personalMemories.includes(mem))
+            .map((mem) => mem.pageContent),
+        ];
+
+        relevantMemories =
+          "Previous relevant conversations (PAY SPECIAL ATTENTION TO THIS PERSONAL INFORMATION ABOUT THE USER):\n" +
+          formattedMemories.join("\n\n") +
+          "\n\n";
+
+        // Log if personal info was found
+        if (personalMemories.length > 0) {
+          console.log(
+            `Found ${personalMemories.length} memories with personal information`
+          );
+        }
       } else {
-        console.log(`No relevant memories found for session: ${sessionId}`);
+        console.log(
+          `No relevant memories found for conversation: ${conversationId}`
+        );
       }
     } catch (error) {
       console.error(
@@ -64,11 +162,11 @@ export async function POST(req: Request) {
       // Continue without memories rather than failing the request
     }
 
-    // Check if the required API key is available
+    // Check if the required API key is available and web search is enabled
     const hasSerperKey = process.env.SERPER_API_KEY;
     let searchResults = "";
 
-    if (hasSerperKey) {
+    if (hasSerperKey && enableWebSearch) {
       try {
         // Use the Serper tool to search for information
         const serperTool = webTools[0];
@@ -115,14 +213,19 @@ export async function POST(req: Request) {
           "Note: Unable to search the web. Please check your Serper API key in the environment variables (.env.local file).\n\n";
       }
     } else {
-      console.warn("Serper API key not found in environment variables");
-      searchResults =
-        "Note: Web search is disabled. To enable it, please add a valid SERPER_API_KEY to your environment variables (.env.local file).\n\n";
+      console.warn(
+        enableWebSearch
+          ? "Serper API key not found in environment variables"
+          : "Web search disabled by user preference"
+      );
+      searchResults = enableWebSearch
+        ? "Note: Web search is disabled. To enable it, please add a valid SERPER_API_KEY to your environment variables (.env.local file).\n\n"
+        : "Note: Web search is disabled by user preference.\n\n";
     }
 
     const chatSession = model.startChat({
       generationConfig: model.generationConfig,
-      history: getSessionHistory(sessionId),
+      history: getConversationHistory(conversationId),
     });
 
     // Create a stream
@@ -157,22 +260,32 @@ ${
           }
         }
 
-        // Update session history after the full response is received
-        updateSessionHistory(sessionId, message, fullResponse);
+        // Update conversation history after the full response is received
+        updateConversationHistory(conversationId, message, fullResponse);
 
-        // Save the conversation to long-term memory
+        // Save the conversation to memory
         try {
-          console.log(`Attempting to save memory for session: ${sessionId}`);
+          console.log(`Saving message to conversation: ${conversationId}`);
           const success = await saveMemory(
-            sessionId,
+            conversationId,
             message,
             fullResponse,
-            validatedUserId
+            validatedUserId,
+            isLongTerm
           );
           if (success) {
-            console.log(`Memory saved successfully for session: ${sessionId}`);
+            console.log(
+              `Memory saved successfully for conversation: ${conversationId}${
+                isLongTerm ? " (as long-term)" : ""
+              }`
+            );
+
+            // Update the conversation's timestamp
+            await updateConversationTimestamp(conversationId);
           } else {
-            console.warn(`Memory could not be saved for session: ${sessionId}`);
+            console.warn(
+              `Memory could not be saved for conversation: ${conversationId}`
+            );
           }
         } catch (error) {
           console.error("Error saving memory, continuing anyway:", error);

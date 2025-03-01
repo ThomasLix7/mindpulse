@@ -1,0 +1,239 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  Box,
+  Heading,
+  Text,
+  Input,
+  Button,
+  Stack,
+  Flex,
+} from "@chakra-ui/react";
+import { getCurrentUser } from "@/utils/supabase-client";
+import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+
+// Memory interface
+interface Memory {
+  userMessage: string;
+  aiResponse: string;
+  timestamp: number;
+  type: string;
+}
+
+export default function LongTermMemories() {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMemories, setLoadingMemories] = useState(false);
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  // Check authentication on load
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { user, error } = await getCurrentUser();
+      setUser(user);
+      setLoading(false);
+
+      if (user) {
+        // Load memories immediately on first load
+        loadMemories("all memories");
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  // Function to load memories
+  const loadMemories = async (query = searchQuery) => {
+    if (!user?.id) {
+      setError("You must be logged in to view long-term memories");
+      return;
+    }
+
+    setLoadingMemories(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/longTermMemories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          query: query || "all memories", // Default to all memories
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load memories: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && Array.isArray(data.memories)) {
+        setMemories(data.memories);
+        console.log(`Loaded ${data.memories.length} long-term memories`);
+      } else {
+        setError(data.error || "No memories found");
+        setMemories([]);
+      }
+    } catch (error) {
+      console.error("Error loading memories:", error);
+      setError((error as Error).message || "Failed to load memories");
+      setMemories([]);
+    } finally {
+      setLoadingMemories(false);
+    }
+  };
+
+  // Handle search form submission
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    loadMemories();
+  };
+
+  // Load all memories
+  const handleLoadAll = () => {
+    setSearchQuery("");
+    loadMemories("all memories");
+  };
+
+  // Format date from timestamp
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  if (loading) {
+    return (
+      <Box textAlign="center" p={10}>
+        <div className="spinner-grow" role="status"></div>
+        <Text mt={4}>Loading...</Text>
+      </Box>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Box p={6}>
+        <Box p={4} bg="yellow.100" borderRadius="md" color="yellow.800">
+          <Heading size="md" mb={2}>
+            Authentication Required
+          </Heading>
+          <Text>You need to be logged in to view your long-term memories.</Text>
+        </Box>
+        <Button mt={4} colorScheme="blue" onClick={() => router.push("/login")}>
+          Go to Login
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box p={6} maxWidth="1000px" mx="auto">
+      <Heading mb={6}>Your Long-Term Memories</Heading>
+      <Text mb={4}>
+        This page shows memories that have been saved to your long-term memory
+        storage. These memories persist across all your conversations.
+      </Text>
+
+      {/* Search form */}
+      <Box mb={6}>
+        <form onSubmit={handleSearch}>
+          <Flex gap={2}>
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search your memories (leave empty to see all memories)"
+              flex="1"
+            />
+            <Button
+              type="submit"
+              colorScheme="blue"
+              isLoading={loadingMemories}
+            >
+              Search
+            </Button>
+            <Button
+              onClick={handleLoadAll}
+              colorScheme="gray"
+              isDisabled={loadingMemories}
+            >
+              Show All
+            </Button>
+          </Flex>
+        </form>
+        <Text fontSize="sm" color="gray.500" mt={1}>
+          Tip: Leave the search box empty or click "Show All" to view all your
+          saved memories
+        </Text>
+      </Box>
+
+      {error && (
+        <Box p={4} bg="red.100" borderRadius="md" color="red.800" mb={6}>
+          <Text>{error}</Text>
+        </Box>
+      )}
+
+      {loadingMemories ? (
+        <Box textAlign="center" p={10}>
+          <div className="spinner-grow" role="status"></div>
+          <Text mt={2}>Loading memories...</Text>
+        </Box>
+      ) : memories.length === 0 ? (
+        <Box p={4} bg="blue.100" borderRadius="md" color="blue.800">
+          <Text>No long-term memories found. This could mean that:</Text>
+          <Text mt={2}>
+            1. You haven't saved any conversations to long-term memory yet.
+          </Text>
+          <Text>
+            2. There might be a technical issue retrieving your memories.
+          </Text>
+          <Text mt={2}>
+            Try clicking "Show All" to see all your memories, or check the
+            browser console for errors.
+          </Text>
+        </Box>
+      ) : (
+        <Stack direction="column" gap={4}>
+          <Text mb={2} fontWeight="bold">
+            Found {memories.length} memories{" "}
+            {searchQuery ? `matching "${searchQuery}"` : ""}
+          </Text>
+          {memories.map((memory, index) => (
+            <Box
+              key={index}
+              p={4}
+              borderRadius="md"
+              boxShadow="md"
+              border="1px"
+              borderColor="gray.200"
+            >
+              <Text fontWeight="bold" color="blue.500" mb={1}>
+                You: {memory.userMessage}
+              </Text>
+              <Box bg="gray.50" p={3} borderRadius="md" mb={2}>
+                <ReactMarkdown>{memory.aiResponse}</ReactMarkdown>
+              </Box>
+              <Text fontSize="sm" color="gray.500">
+                Saved on: {formatDate(memory.timestamp)}
+              </Text>
+            </Box>
+          ))}
+        </Stack>
+      )}
+
+      <Box mt={6}>
+        <Button
+          colorScheme="gray"
+          onClick={() => router.push("/")}
+          variant="outline"
+        >
+          Back to Chat
+        </Button>
+      </Box>
+    </Box>
+  );
+}

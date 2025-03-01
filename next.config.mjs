@@ -1,7 +1,6 @@
 export default {
-  experimental: {
-    serverComponentsExternalPackages: ["@supabase/supabase-js", "playwright"],
-  },
+  serverExternalPackages: ["@supabase/supabase-js", "playwright"],
+  experimental: {},
   images: {
     domains: ["chrome.browserless.io"],
   },

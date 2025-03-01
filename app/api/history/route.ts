@@ -3,22 +3,25 @@ import { createServerClient } from "@/utils/supabase-server";
 import { getVectorStore } from "@/lib/vectorstore";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
+// Updated interface to reflect new schema
 interface MemoryRow {
   content: string;
   metadata: {
+    conversationId: string;
     userId?: string;
-    sessionId: string;
     timestamp: number;
     type: string;
+    isLongterm: boolean;
+    created_at?: string;
   };
 }
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   try {
-    // Parse the request
-    const { sessionId, userId } = await request.json();
-
-    console.log("Received userId:", userId);
+    // Get query parameters
+    const { searchParams } = new URL(request.url);
+    const conversationId = searchParams.get("conversationId");
+    const userId = searchParams.get("userId");
 
     // Check database connectivity
     try {
@@ -34,8 +37,6 @@ export async function POST(request: Request) {
           { error: "Database connection failed", details: testError.message },
           { status: 500 }
         );
-      } else {
-        console.log("Database connection test successful:", testData);
       }
     } catch (dbError) {
       console.error("Error during database connection test:", dbError);
@@ -48,10 +49,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check that we have a sessionId
-    if (!sessionId) {
+    // Check that we have a conversationId
+    if (!conversationId) {
       return NextResponse.json(
-        { error: "Session ID is required" },
+        { error: "Conversation ID is required" },
         { status: 400 }
       );
     }
@@ -83,11 +84,7 @@ export async function POST(request: Request) {
 
     if (!validatedUserId) {
       console.log(
-        "In history, Invalid user ID provided, continuing with session ID only"
-      );
-    } else {
-      console.log(
-        `In history Attempting to retrieve memories for session: ${sessionId} and user: ${validatedUserId}`
+        "Invalid user ID provided, continuing with conversation ID only"
       );
     }
 
@@ -101,77 +98,43 @@ export async function POST(request: Request) {
         );
       }
 
-      let resultRows: any[] = [];
+      let resultRows: MemoryRow[] = [];
 
       // Check if we have a proper vector store or just a Supabase client
       if (vectorStore instanceof SupabaseVectorStore) {
-        // Use the supabase client from the vector store
-        console.log(
-          "✅ Using vector store with embeddings for history retrieval"
-        );
         const supabaseClient = (vectorStore as any).client;
 
-        // Query session-based memories
-        const { data: sessionResultRows, error: sessionQueryError } =
+        // Query conversation-based memories using the metadata field
+        const { data: conversationResultRows, error: conversationQueryError } =
           await supabaseClient
             .from("ai_memories")
             .select("content, metadata")
-            .filter("metadata->>'sessionId'", "eq", sessionId)
-            .order("metadata->>'timestamp'", { ascending: false });
+            .filter("metadata->>'conversationId'", "eq", conversationId)
+            .order("metadata->>'timestamp'", { ascending: true });
 
-        if (sessionQueryError) {
+        if (conversationQueryError) {
           console.error(
-            "Database query error for session memories:",
-            sessionQueryError
+            "Database query error for conversation memories:",
+            conversationQueryError
           );
         } else {
-          resultRows = sessionResultRows || [];
-        }
-
-        // Query user-based memories if we have a valid user ID
-        if (validatedUserId) {
-          const { data: userResultRows, error: userQueryError } =
-            await supabaseClient
-              .from("ai_memories")
-              .select("content, metadata")
-              .filter("metadata->>'userId'", "eq", validatedUserId)
-              .order("metadata->>'timestamp'", { ascending: false });
-
-          if (userQueryError) {
-            console.error(
-              "Database query error for user memories:",
-              userQueryError
-            );
-          } else if (userResultRows) {
-            // Add user memories to the beginning (they're more relevant)
-            resultRows.unshift(...userResultRows);
-          }
+          resultRows = conversationResultRows || [];
         }
       } else if (vectorStore && "from" in vectorStore) {
         // Use Supabase client directly
         console.log(
           "⚠️ FALLBACK: Using direct Supabase queries for history retrieval (no embeddings)"
         );
-        const { data: sessionResultRows, error: queryError } = await vectorStore
-          .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'sessionId'", "eq", sessionId)
-          .order("metadata->>'timestamp'", { ascending: false });
 
-        resultRows = sessionResultRows || [];
+        // Query conversation-based memories using the metadata field
+        const { data: conversationResultRows, error: queryError } =
+          await vectorStore
+            .from("ai_memories")
+            .select("content, metadata")
+            .filter("metadata->>'conversationId'", "eq", conversationId)
+            .order("metadata->>'timestamp'", { ascending: true });
 
-        if (validatedUserId) {
-          const { data: userResultRows, error: userQueryError } =
-            await vectorStore
-              .from("ai_memories")
-              .select("content, metadata")
-              .filter("metadata->>'userId'", "eq", validatedUserId)
-              .order("metadata->>'timestamp'", { ascending: false });
-
-          if (!userQueryError && userResultRows) {
-            resultRows.unshift(...userResultRows);
-          }
-        }
+        resultRows = conversationResultRows || [];
 
         if (queryError) {
           console.error("Database query error:", queryError);
@@ -182,7 +145,7 @@ export async function POST(request: Request) {
       // Process the results to extract user and AI messages
       const history = [];
 
-      for (const row of resultRows as MemoryRow[]) {
+      for (const row of resultRows) {
         try {
           const content = row.content;
           // Each content should be in the format "USER: message\nAI: response"
@@ -196,11 +159,14 @@ export async function POST(request: Request) {
           const userMessage = parts[0].replace("USER: ", "");
           const aiResponse = parts[1];
 
+          // Get timestamp from metadata
+          const timestamp = row.metadata.timestamp || Date.now();
+
           // Add to history array
           history.push({
             userMessage,
             aiResponse,
-            timestamp: row.metadata.timestamp,
+            timestamp,
           });
         } catch (error) {
           // Skip entries that can't be parsed
