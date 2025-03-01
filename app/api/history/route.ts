@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/utils/supabase-server";
 import { getVectorStore } from "@/lib/vectorstore";
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
+import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
 interface MemoryRow {
   content: string;
@@ -20,13 +20,13 @@ export async function POST(request: Request) {
 
     console.log("Received userId:", userId);
 
-    // Check database connectivity (NEW TEST)
+    // Check database connectivity
     try {
       const supabaseServer = await createServerClient();
       const { data: testData, error: testError } = await supabaseServer
         .from("profiles")
         .select("id")
-        .limit(1); // Just fetch one row to test the connection
+        .limit(1);
 
       if (testError) {
         console.error("Database connection test failed:", testError);
@@ -61,42 +61,33 @@ export async function POST(request: Request) {
 
     if (userId) {
       try {
-        // Create a Supabase client
         const supabaseServer = await createServerClient();
-
-        // Check if this user exists in the profiles table
         const { data: profileData, error: profileError } = await supabaseServer
           .from("profiles")
           .select("id")
           .eq("id", userId)
           .single();
 
-        console.log("profileError:", profileError);
-        console.log("profileData:", profileData);
-
         if (profileError || !profileData) {
           console.log(
             `User ID ${userId} not found in profiles table:`,
             profileError
           );
-          // We continue without the user ID, falling back to session-based memory only
         } else {
-          // User ID is valid and exists in the profiles table
           validatedUserId = userId;
         }
       } catch (error) {
         console.error("Error validating user ID:", error);
-        // Continue without the user ID
       }
     }
 
     if (!validatedUserId) {
       console.log(
-        "in history, Invalid user ID provided, continuing with session ID only"
+        "In history, Invalid user ID provided, continuing with session ID only"
       );
     } else {
       console.log(
-        `in history Attempting to retrieve memories for session: ${sessionId} and user: ${validatedUserId}`
+        `In history Attempting to retrieve memories for session: ${sessionId} and user: ${validatedUserId}`
       );
     }
 
@@ -110,98 +101,120 @@ export async function POST(request: Request) {
         );
       }
 
-      // Build query based on whether we have a valid user ID
-      let whereClause: string;
-      let parameters: string[];
+      let resultRows: any[] = [];
 
-      if (validatedUserId) {
-        whereClause = "metadata->>'userId' = $1 OR metadata->>'sessionId' = $2";
-        parameters = [validatedUserId, sessionId];
-      } else {
-        whereClause = "metadata->>'sessionId' = $1";
-        parameters = [sessionId];
-      }
+      // Check if we have a proper vector store or just a Supabase client
+      if (vectorStore instanceof SupabaseVectorStore) {
+        // Use the supabase client from the vector store
+        console.log(
+          "✅ Using vector store with embeddings for history retrieval"
+        );
+        const supabaseClient = (vectorStore as any).client;
 
-      // Access the client directly using the proper method for PGVectorStore
-      // For direct query access
-      // const pgStore = vectorStore as PGVectorStore;
-      // const client = await pgStore.pool.connect();
+        // Query session-based memories
+        const { data: sessionResultRows, error: sessionQueryError } =
+          await supabaseClient
+            .from("ai_memories")
+            .select("content, metadata")
+            .filter("metadata->>'sessionId'", "eq", sessionId)
+            .order("metadata->>'timestamp'", { ascending: false });
 
-      try {
-        // Use vectorStore (which is now SupabaseClient) directly for query
-        let resultRows: any[] = []; // Initialize resultRows as empty array
-        const { data: sessionResultRows, error: queryError } = await vectorStore
-          .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'sessionId'", "eq", parameters[0]) // Use filter with parameters directly
-          .order("metadata->>'timestamp'", { ascending: false }); // Simplified order clause
+        if (sessionQueryError) {
+          console.error(
+            "Database query error for session memories:",
+            sessionQueryError
+          );
+        } else {
+          resultRows = sessionResultRows || [];
+        }
 
-        resultRows = sessionResultRows || []; // Use sessionResultRows and default to empty array if null
-
+        // Query user-based memories if we have a valid user ID
         if (validatedUserId) {
           const { data: userResultRows, error: userQueryError } =
-            await vectorStore
+            await supabaseClient
               .from("ai_memories")
               .select("content, metadata")
-              .filter("metadata->>'userId'", "eq", parameters[0]) // Use filter with userId
-              .order("metadata->>'timestamp'", { ascending: false }); // Simplified order clause
+              .filter("metadata->>'userId'", "eq", validatedUserId)
+              .order("metadata->>'timestamp'", { ascending: false });
 
           if (userQueryError) {
             console.error(
               "Database query error for user memories:",
               userQueryError
             );
+          } else if (userResultRows) {
+            // Add user memories to the beginning (they're more relevant)
+            resultRows.unshift(...userResultRows);
           }
-          // Combine results - user memories should come first (more relevant)
-          resultRows.unshift(...(userResultRows || [])); // Add user memories to the beginning
+        }
+      } else if (vectorStore && "from" in vectorStore) {
+        // Use Supabase client directly
+        console.log(
+          "⚠️ FALLBACK: Using direct Supabase queries for history retrieval (no embeddings)"
+        );
+        const { data: sessionResultRows, error: queryError } = await vectorStore
+          .from("ai_memories")
+          .select("content, metadata")
+          .filter("metadata->>'sessionId'", "eq", sessionId)
+          .order("metadata->>'timestamp'", { ascending: false });
+
+        resultRows = sessionResultRows || [];
+
+        if (validatedUserId) {
+          const { data: userResultRows, error: userQueryError } =
+            await vectorStore
+              .from("ai_memories")
+              .select("content, metadata")
+              .filter("metadata->>'userId'", "eq", validatedUserId)
+              .order("metadata->>'timestamp'", { ascending: false });
+
+          if (!userQueryError && userResultRows) {
+            resultRows.unshift(...userResultRows);
+          }
         }
 
         if (queryError) {
           console.error("Database query error:", queryError);
           throw queryError;
         }
-        const result = { rows: resultRows || [] };
-
-        // Process the results to extract user and AI messages
-        const history = [];
-
-        for (const row of result.rows as MemoryRow[]) {
-          try {
-            const content = row.content;
-            // Each content should be in the format "USER: message\nAI: response"
-            const parts = content.split("\nAI: ");
-
-            if (parts.length !== 2) {
-              // Skip malformed entries
-              continue;
-            }
-
-            const userMessage = parts[0].replace("USER: ", "");
-            const aiResponse = parts[1];
-
-            // Add to history array
-            history.push({
-              userMessage,
-              aiResponse,
-              timestamp: row.metadata.timestamp,
-            });
-          } catch (error) {
-            // Skip entries that can't be parsed
-            console.error("Error parsing history entry:", error);
-          }
-        }
-
-        // Return the processed history
-        return NextResponse.json({
-          history,
-          success: true,
-        });
-      } finally {
-        // Release the client back to the pool
-        // client.release();
       }
+
+      // Process the results to extract user and AI messages
+      const history = [];
+
+      for (const row of resultRows as MemoryRow[]) {
+        try {
+          const content = row.content;
+          // Each content should be in the format "USER: message\nAI: response"
+          const parts = content.split("\nAI: ");
+
+          if (parts.length !== 2) {
+            // Skip malformed entries
+            continue;
+          }
+
+          const userMessage = parts[0].replace("USER: ", "");
+          const aiResponse = parts[1];
+
+          // Add to history array
+          history.push({
+            userMessage,
+            aiResponse,
+            timestamp: row.metadata.timestamp,
+          });
+        } catch (error) {
+          // Skip entries that can't be parsed
+          console.error("Error parsing history entry:", error);
+        }
+      }
+
+      // Return the processed history
+      return NextResponse.json({
+        history,
+        success: true,
+      });
     } catch (error) {
-      console.error("Error initializing vector store:", error);
+      console.error("Error retrieving history:", error);
       return NextResponse.json(
         {
           error: "Database connection error",

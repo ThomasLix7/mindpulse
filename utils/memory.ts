@@ -1,5 +1,7 @@
 import { getVectorStore } from "../lib/vectorstore";
 import { Document } from "@langchain/core/documents";
+import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 interface MemoryDocument {
   pageContent: string;
@@ -25,10 +27,28 @@ export async function saveMemory(
       return false;
     }
 
-    // --- Simplified insert using supabase client directly ---
-    if (vectorStore && "from" in vectorStore) {
-      // Check if vectorStore is supabase client
-      console.log("Using simplified memory save with supabase client");
+    // Create a document with the conversation content
+    const document = new Document({
+      pageContent: `USER: ${conversation}\nAI: ${response}`,
+      metadata: {
+        sessionId,
+        userId,
+        timestamp: Date.now(),
+        type: "chat",
+      },
+    });
+
+    // Check if we got a vectorstore or just a Supabase client
+    if (vectorStore instanceof SupabaseVectorStore) {
+      // Use the proper vector store interface
+      console.log("Using vector store for memory save");
+      await vectorStore.addDocuments([document]);
+      return true;
+    } else if (vectorStore && "from" in vectorStore) {
+      // Fallback to using Supabase client directly
+      console.log(
+        "⚠️ FALLBACK: Using direct Supabase queries for saving memory (no embeddings)"
+      );
       try {
         const { data, error } = await vectorStore.from("ai_memories").insert([
           {
@@ -53,18 +73,8 @@ export async function saveMemory(
         return false;
       }
     }
-    // --- End simplified insert ---
 
-    // --- Original vector store code (commented out for now) ---
-    // await vectorStore.addDocuments([
-    //   {
-    //     pageContent: `USER: ${conversation}\nAI: ${response}`,
-    //     metadata: { sessionId, userId, timestamp: Date.now(), type: 'chat' },
-    //   },
-    // ]);
-    // --- End original vector store code ---
-
-    return true; // Indicate success even if simplified save fails (for now)
+    return false;
   } catch (error) {
     console.error("Error saving memory:", error);
     return false;
@@ -81,52 +91,76 @@ export async function recallMemory(
     const vectorStore = await getVectorStore();
     if (!vectorStore) {
       console.error("Vector store failed to initialize.");
-      return []; // Return empty array if vector store is not available
+      return [];
     }
 
-    // --- Simplified query using supabase client directly ---
-    if (vectorStore && "from" in vectorStore) {
-      // Check if vectorStore is supabase client
-      console.log("Using simplified memory recall with supabase client");
+    // Check if we got a vectorstore or just a Supabase client
+    if (vectorStore instanceof SupabaseVectorStore) {
+      // Use the proper vector store interface for similarity search
+      console.log("Using vector store for memory recall");
+
+      // Create metadata filter
+      const filter = userId
+        ? {
+            or: [{ sessionId: sessionId }, { userId: userId }],
+          }
+        : { sessionId: sessionId };
+
+      // Perform the similarity search
+      return await vectorStore.similaritySearch(query, 5, filter);
+    } else if (vectorStore && "from" in vectorStore) {
+      // Fallback to using Supabase client directly
+      console.log(
+        "⚠️ FALLBACK: Using direct Supabase queries for recalling memory (no embeddings)"
+      );
       try {
-        const { data, error } = await vectorStore
+        // Start with session-based memories
+        const { data: sessionData, error: sessionError } = await vectorStore
           .from("ai_memories")
           .select("content, metadata")
-          .limit(5); // Just fetch some rows for now
+          .filter("metadata->>'sessionId'", "eq", sessionId)
+          .order("metadata->>'timestamp'", { ascending: false })
+          .limit(5);
 
-        if (error) {
-          console.error("Error fetching memories (simplified):", error);
+        if (sessionError) {
+          console.error("Error fetching session memories:", sessionError);
           return [];
         }
-        console.log("Simplified memory recall successful:", data);
-        return data.map(
+
+        let results = sessionData || [];
+
+        // If userId is provided, also fetch user memories
+        if (userId) {
+          const { data: userData, error: userError } = await vectorStore
+            .from("ai_memories")
+            .select("content, metadata")
+            .filter("metadata->>'userId'", "eq", userId)
+            .order("metadata->>'timestamp'", { ascending: false })
+            .limit(5);
+
+          if (!userError && userData) {
+            // Combine results, prioritizing user-specific memories
+            results = [...userData, ...results];
+          }
+        }
+
+        // Convert to Document format
+        return results.map(
           (item) =>
             new Document({
               pageContent: item.content,
               metadata: item.metadata,
             })
-        ); // Adapt data to Document format
+        );
       } catch (e) {
         console.error("Error during simplified memory recall:", e);
         return [];
       }
     }
-    // --- End simplified query ---
 
-    // --- Original vector store query (commented out for now) ---
-    // const whereClause = userId
-    //   ? "metadata->>'userId' = $1 OR metadata->>'sessionId' = $2"
-    //   : "metadata->>'sessionId' = $1";
-    // const parameters = userId ? [userId, sessionId] : [sessionId];
-
-    // return await vectorStore.similaritySearch(query, 5, {
-    //   where: whereClause,
-    //   parameters: parameters,
-    // });
-    // --- End original vector store query ---
+    return [];
   } catch (error) {
     console.error("Error recalling memory:", error);
     return [];
   }
-  return []; // Add default return
 }
