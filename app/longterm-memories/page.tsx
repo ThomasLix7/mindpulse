@@ -20,6 +20,7 @@ interface Memory {
   aiResponse: string;
   timestamp: number;
   type: string;
+  id?: string;
 }
 
 export default function LongTermMemories() {
@@ -29,6 +30,7 @@ export default function LongTermMemories() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
+  const [forgettingMemory, setForgettingMemory] = useState<string | null>(null);
   const router = useRouter();
 
   // Check authentication on load
@@ -86,6 +88,46 @@ export default function LongTermMemories() {
       setMemories([]);
     } finally {
       setLoadingMemories(false);
+    }
+  };
+
+  // Function to forget a memory
+  const forgetMemory = async (memoryId: string) => {
+    if (!user?.id || !memoryId) {
+      setError("Unable to forget memory: missing user ID or memory ID");
+      return;
+    }
+
+    setForgettingMemory(memoryId);
+    setError("");
+
+    try {
+      const response = await fetch("/api/forgetMemory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          memoryId: memoryId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to forget memory: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Remove the forgotten memory from the UI
+        setMemories(memories.filter((memory) => memory.id !== memoryId));
+      } else {
+        setError(data.error || "Failed to forget memory");
+      }
+    } catch (error) {
+      console.error("Error forgetting memory:", error);
+      setError((error as Error).message || "Failed to forget memory");
+    } finally {
+      setForgettingMemory(null);
     }
   };
 
@@ -233,9 +275,27 @@ export default function LongTermMemories() {
               >
                 <ReactMarkdown>{memory.aiResponse}</ReactMarkdown>
               </Box>
-              <Text fontSize="sm" color="gray.400">
-                Saved on: {formatDate(memory.timestamp)}
-              </Text>
+              <Flex justifyContent="space-between" alignItems="center">
+                <Text fontSize="sm" color="gray.400">
+                  Saved on: {formatDate(memory.timestamp)}
+                </Text>
+                {memory.id && (
+                  <Button
+                    size="sm"
+                    colorScheme="red"
+                    variant="outline"
+                    onClick={() => forgetMemory(memory.id as string)}
+                    isLoading={forgettingMemory === memory.id}
+                    leftIcon={
+                      <span role="img" aria-label="forget">
+                        🗑️
+                      </span>
+                    }
+                  >
+                    Forget
+                  </Button>
+                )}
+              </Flex>
             </Box>
           ))}
         </Stack>

@@ -122,6 +122,7 @@ export async function POST(request: Request) {
                 timestamp:
                   item.metadata.timestamp ||
                   new Date(item.created_at).getTime(),
+                id: item.id,
               };
             }
 
@@ -134,6 +135,7 @@ export async function POST(request: Request) {
               timestamp:
                 item.metadata.timestamp || new Date(item.created_at).getTime(),
               type: item.metadata.type || "chat",
+              id: item.id,
             };
           } catch (error) {
             console.error("Error parsing memory:", error);
@@ -141,6 +143,7 @@ export async function POST(request: Request) {
               content: item.content,
               timestamp:
                 item.metadata.timestamp || new Date(item.created_at).getTime(),
+              id: item.id,
             };
           }
         });
@@ -251,7 +254,11 @@ export async function POST(request: Request) {
 
               if (parts.length !== 2) {
                 // Return as-is for malformed entries
-                return { content, timestamp: memory.metadata.timestamp };
+                return {
+                  content,
+                  timestamp: memory.metadata.timestamp,
+                  id: memory.metadata.id,
+                };
               }
 
               const userMessage = parts[0].replace("USER: ", "");
@@ -262,6 +269,7 @@ export async function POST(request: Request) {
                 aiResponse,
                 timestamp: memory.metadata.timestamp,
                 type: memory.metadata.type || "chat",
+                id: memory.metadata.id,
               };
             } catch (error) {
               // Return raw content for entries that can't be parsed
@@ -269,6 +277,7 @@ export async function POST(request: Request) {
               return {
                 content: memory.pageContent,
                 timestamp: memory.metadata.timestamp,
+                id: memory.metadata.id,
               };
             }
           });
@@ -285,13 +294,19 @@ export async function POST(request: Request) {
       // Process the memories into a more readable format
       const processedMemories = memories.map((memory) => {
         try {
-          const content = memory.pageContent;
+          // Extract user and AI parts from memory
+          const content = memory.pageContent || "";
+          const metadataId = memory.metadata?.id || ""; // Get ID from metadata
+
           // Each content should be in the format "USER: message\nAI: response"
           const parts = content.split("\nAI: ");
 
           if (parts.length !== 2) {
-            // Return as-is for malformed entries
-            return { content, timestamp: memory.metadata.timestamp };
+            return {
+              content,
+              timestamp: memory.metadata?.timestamp || Date.now(),
+              id: metadataId, // Include the memory ID
+            };
           }
 
           const userMessage = parts[0].replace("USER: ", "");
@@ -300,15 +315,16 @@ export async function POST(request: Request) {
           return {
             userMessage,
             aiResponse,
-            timestamp: memory.metadata.timestamp,
-            type: memory.metadata.type || "chat",
+            timestamp: memory.metadata?.timestamp || Date.now(),
+            type: memory.metadata?.type || "chat",
+            id: metadataId, // Include the memory ID
           };
         } catch (error) {
-          // Return raw content for entries that can't be parsed
-          console.error("Error parsing memory entry:", error);
+          console.error("Error parsing memory:", error);
           return {
-            content: memory.pageContent,
-            timestamp: memory.metadata.timestamp,
+            content: memory.pageContent || "",
+            timestamp: memory.metadata?.timestamp || Date.now(),
+            id: memory.metadata?.id || "", // Include the memory ID
           };
         }
       });
