@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/utils/supabase-server";
+import { getVectorStore } from "@/lib/vectorstore";
+import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
 // Interface for conversation data
 export interface Conversation {
@@ -10,12 +12,27 @@ export interface Conversation {
   is_archived?: boolean;
 }
 
+// Interface for memory rows from the database
+interface MemoryRow {
+  content: string;
+  metadata: {
+    conversationId: string;
+    userId?: string;
+    timestamp: number;
+    type: string;
+    isLongterm: boolean;
+    created_at?: string;
+  };
+}
+
 // GET all conversations for a user
 export async function GET(request: Request) {
   try {
     // Get the user ID from query params
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const conversationId = searchParams.get("conversationId");
+    const includeHistory = searchParams.get("includeHistory") === "true";
 
     if (!userId) {
       return NextResponse.json(
@@ -36,6 +53,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Invalid user ID" }, { status: 403 });
     }
 
+    // If a specific conversation history is requested
+    if (conversationId) {
+      return await getConversationHistory(conversationId, userId);
+    }
+
     // Get all conversations for the user
     const { data: conversations, error } = await supabase
       .from("conversations")
@@ -52,6 +74,34 @@ export async function GET(request: Request) {
       );
     }
 
+    // If includeHistory is true, fetch history for each conversation
+    if (includeHistory && conversations) {
+      try {
+        const conversationsWithHistory = await Promise.all(
+          conversations.map(async (conv) => {
+            const historyResponse = await getConversationHistory(
+              conv.id,
+              userId
+            );
+            const historyData = await historyResponse.json();
+
+            return {
+              ...conv,
+              history: historyData.success ? historyData.history : [],
+            };
+          })
+        );
+
+        return NextResponse.json({
+          conversations: conversationsWithHistory,
+          success: true,
+        });
+      } catch (error) {
+        console.error("Error fetching conversations with history:", error);
+        // Fall back to just returning conversations without history
+      }
+    }
+
     return NextResponse.json({
       conversations,
       success: true,
@@ -60,6 +110,121 @@ export async function GET(request: Request) {
     console.error("API Error:", error);
     return NextResponse.json(
       { error: "Internal server error", success: false },
+      { status: 500 }
+    );
+  }
+}
+
+// Helper function to get conversation history
+async function getConversationHistory(conversationId: string, userId: string) {
+  try {
+    // Check that we have a conversationId
+    if (!conversationId) {
+      return NextResponse.json(
+        { error: "Conversation ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Initialize vector store
+    const vectorStore = await getVectorStore();
+    if (!vectorStore) {
+      return NextResponse.json(
+        { error: "Vector store initialization failed" },
+        { status: 500 }
+      );
+    }
+
+    let resultRows: MemoryRow[] = [];
+
+    // Check if we have a proper vector store or just a Supabase client
+    if (vectorStore instanceof SupabaseVectorStore) {
+      const supabaseClient = (vectorStore as any).client;
+
+      // Query conversation-based memories using the metadata field
+      const { data: conversationResultRows, error: conversationQueryError } =
+        await supabaseClient
+          .from("ai_memories")
+          .select("content, metadata")
+          .filter("metadata->>'conversationId'", "eq", conversationId)
+          .order("metadata->>'timestamp'", { ascending: true });
+
+      if (conversationQueryError) {
+        console.error(
+          "Database query error for conversation memories:",
+          conversationQueryError
+        );
+      } else {
+        resultRows = conversationResultRows || [];
+      }
+    } else if (vectorStore && "from" in vectorStore) {
+      // Use Supabase client directly
+      console.log(
+        "⚠️ FALLBACK: Using direct Supabase queries for history retrieval (no embeddings)"
+      );
+
+      // Query conversation-based memories using the metadata field
+      const { data: conversationResultRows, error: queryError } =
+        await vectorStore
+          .from("ai_memories")
+          .select("content, metadata")
+          .filter("metadata->>'conversationId'", "eq", conversationId)
+          .order("metadata->>'timestamp'", { ascending: true });
+
+      resultRows = conversationResultRows || [];
+
+      if (queryError) {
+        console.error("Database query error:", queryError);
+        throw queryError;
+      }
+    }
+
+    // Process the results to extract user and AI messages
+    const history = [];
+
+    for (const row of resultRows) {
+      try {
+        const content = row.content;
+        // Each content should be in the format "USER: message\nAI: response"
+        const parts = content.split("\nAI: ");
+
+        if (parts.length !== 2) {
+          // Skip malformed entries
+          continue;
+        }
+
+        const userMessage = parts[0].replace("USER: ", "");
+        const aiResponse = parts[1];
+
+        // Get timestamp from metadata
+        const timestamp = row.metadata.timestamp || Date.now();
+
+        // Add to history array
+        history.push({
+          userMessage,
+          aiResponse,
+          timestamp,
+        });
+      } catch (error) {
+        // Skip entries that can't be parsed
+        console.error("Error parsing history entry:", error);
+      }
+    }
+
+    // Return the processed history
+    return NextResponse.json({
+      history,
+      success: true,
+    });
+  } catch (error) {
+    console.error("Error retrieving history:", error);
+    return NextResponse.json(
+      {
+        error: "Database connection error",
+        message:
+          "Could not connect to the database. Using localStorage fallback.",
+        success: false,
+      },
       { status: 500 }
     );
   }

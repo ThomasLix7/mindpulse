@@ -106,11 +106,14 @@ export default function Chat() {
   // Fetch conversations from server for logged-in users
   const fetchConversationsFromServer = async (userId: string) => {
     try {
-      // Get conversations list from server
-      const response = await fetch(`/api/conversations?userId=${userId}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
+      // Get conversations list from server with history included
+      const response = await fetch(
+        `/api/conversations?userId=${userId}&includeHistory=true`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
       if (response.ok) {
         const data = await response.json();
@@ -122,36 +125,19 @@ export default function Chat() {
           Array.isArray(data.conversations)
         ) {
           // Convert server data format to client format
-          const clientConversations = await Promise.all(
-            data.conversations.map(async (conv: any) => {
-              // Fetch history for this conversation
-              const historyResponse = await fetch(
-                `/api/history?conversationId=${conv.id}&userId=${userId}`,
-                {
-                  method: "GET",
-                  headers: { "Content-Type": "application/json" },
-                }
-              );
+          const clientConversations = data.conversations.map((conv: any) => {
+            // Format history from the already included data
+            const history = (conv.history || []).map((item: any) => ({
+              user: item.userMessage,
+              ai: item.aiResponse,
+            }));
 
-              let history: Array<{ user: string; ai: string }> = [];
-
-              if (historyResponse.ok) {
-                const historyData = await historyResponse.json();
-                if (historyData.success && historyData.history) {
-                  history = historyData.history.map((item: any) => ({
-                    user: item.userMessage,
-                    ai: item.aiResponse,
-                  }));
-                }
-              }
-
-              return {
-                id: conv.id,
-                title: conv.title,
-                history,
-              };
-            })
-          );
+            return {
+              id: conv.id,
+              title: conv.title,
+              history,
+            };
+          });
 
           console.log(`Setting ${clientConversations.length} conversations`);
           setConversations(clientConversations);
