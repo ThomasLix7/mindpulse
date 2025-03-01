@@ -47,7 +47,7 @@ The system provides a single unified API for long-term memory operations:
 
 ```typescript
 // To save a new long-term memory
-const response = await fetch("/api/longTermMemory", {
+const response = await fetch("/api/memory", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -58,7 +58,7 @@ const response = await fetch("/api/longTermMemory", {
 });
 
 // To promote an existing memory to long-term
-const response = await fetch("/api/longTermMemory", {
+const response = await fetch("/api/memory", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({

@@ -568,8 +568,8 @@ export default function Chat() {
     try {
       // Get the memory ID for this message
       console.log("Step 1: Finding memory ID for this message...");
-      const findMemoryResponse = await fetch("/api/findMemory", {
-        method: "POST",
+      const findMemoryResponse = await fetch("/api/memory", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: conversationId,
@@ -603,9 +603,9 @@ export default function Chat() {
         return;
       }
 
-      // Use the longTermMemory endpoint to promote it
+      // Use the memory endpoint to promote it
       console.log("Step 3: Promoting memory to long-term...");
-      const response = await fetch("/api/longTermMemory", {
+      const response = await fetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

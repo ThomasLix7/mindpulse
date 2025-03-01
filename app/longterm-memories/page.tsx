@@ -60,14 +60,15 @@ export default function LongTermMemories() {
     setError("");
 
     try {
-      const response = await fetch("/api/longTermMemories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.id,
-          query: query || "all memories", // Default to all memories
-        }),
-      });
+      const response = await fetch(
+        `/api/memory?userId=${encodeURIComponent(
+          user.id
+        )}&query=${encodeURIComponent(query || "all memories")}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to load memories: ${response.status}`);
@@ -102,14 +103,15 @@ export default function LongTermMemories() {
     setError("");
 
     try {
-      const response = await fetch("/api/forgetMemory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.id,
-          memoryId: memoryId,
-        }),
-      });
+      const response = await fetch(
+        `/api/memory?userId=${encodeURIComponent(
+          user.id
+        )}&memoryId=${encodeURIComponent(memoryId)}`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to forget memory: ${response.status}`);
