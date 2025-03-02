@@ -528,13 +528,29 @@ export default function Chat() {
     router.push("/login");
   };
 
-  const clearConversation = () => {
-    // Clear only the active conversation
+  const clearConversation = async () => {
+    // Clear only the active conversation in the UI
     setConversations((prev) =>
       prev.map((conv) =>
         conv.id === activeConversationId ? { ...conv, history: [] } : conv
       )
     );
+
+    // For logged-in users, clear history in the database
+    if (user?.id) {
+      try {
+        await fetch(`/api/conversations/clear`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: activeConversationId,
+            userId: user.id,
+          }),
+        });
+      } catch (error) {
+        console.error("Error clearing conversation history on server:", error);
+      }
+    }
   };
 
   const saveToLongTermMemory = async (
@@ -694,40 +710,19 @@ export default function Chat() {
             <Box
               key={conv.id}
               p={2}
-              borderRadius="md"
-              bg={conv.id === activeConversationId ? "blue.100" : "transparent"}
-              _hover={{
-                bg: conv.id === activeConversationId ? "blue.100" : "gray.100",
-              }}
               cursor="pointer"
               onClick={() => switchConversation(conv.id)}
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
             >
               <Text
                 fontSize="sm"
                 fontWeight={
                   conv.id === activeConversationId ? "bold" : "normal"
                 }
-                maxW="180px"
+                maxW="230px"
                 truncate
               >
                 {conv.title}
               </Text>
-              <Button
-                size="xs"
-                variant="ghost"
-                colorScheme="red"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm("Delete this conversation?")) {
-                    deleteConversation(conv.id);
-                  }
-                }}
-              >
-                ×
-              </Button>
             </Box>
           ))}
         </Stack>
