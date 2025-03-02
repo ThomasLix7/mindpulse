@@ -32,7 +32,11 @@ function generateConversationId() {
 interface Conversation {
   id: string;
   title: string;
-  history: Array<{ user: string; ai: string }>;
+  history: Array<{
+    user: string;
+    ai: string;
+    isLongterm?: boolean;
+  }>;
 }
 
 interface ChatProps {
@@ -56,6 +60,9 @@ export default function Chat({
   const [savingToLongTerm, setSavingToLongTerm] = useState<number | null>(null);
   const [saveAsLongTerm, setSaveAsLongTerm] = useState(false);
   const [enableWebSearch, setEnableWebSearch] = useState<boolean>(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [updatingTitle, setUpdatingTitle] = useState(false);
   const router = useRouter();
 
   // Helper to get active conversation
@@ -184,6 +191,7 @@ export default function Chat({
                       (item: any) => ({
                         user: item.userMessage,
                         ai: item.aiResponse,
+                        isLongterm: item.metadata?.isLongterm || false,
                       })
                     );
 
@@ -812,12 +820,13 @@ export default function Chat({
     }
   };
 
-  const saveToLongTermMemory = async (
+  // Add a forgetFromLongTermMemory function
+  const forgetFromLongTermMemory = async (
     conversationId: string,
     messageIndex: number
   ) => {
     if (!user?.id) {
-      alert("You must be logged in to save to long-term memory");
+      alert("You must be logged in to manage long-term memory");
       return;
     }
 
@@ -829,7 +838,7 @@ export default function Chat({
 
     const message = conversation.history[messageIndex];
     console.log(
-      `Saving message to long-term memory: "${message.user.substring(
+      `Removing message from long-term memory: "${message.user.substring(
         0,
         50
       )}..."`
@@ -837,7 +846,7 @@ export default function Chat({
     console.log(`Conversation ID: ${conversationId}`);
     console.log(`User ID: ${user.id}`);
 
-    // Set the saving indicator
+    // Set the saving indicator (reuse the same state variable)
     setSavingToLongTerm(messageIndex);
 
     try {
@@ -878,8 +887,153 @@ export default function Chat({
         return;
       }
 
+      // Check if the memory is part of an active conversation
+      // If it is, we should not delete it, but just mark it as non-longterm in our UI
+      const isActiveConversation = conversations.some(
+        (c) => c.id === conversationId
+      );
+      if (isActiveConversation) {
+        // Just update the UI to reflect the change visually
+        setConversations((prev) =>
+          prev.map((conv) => {
+            if (conv.id === conversationId) {
+              const updatedHistory = [...conv.history];
+              updatedHistory[messageIndex] = {
+                ...updatedHistory[messageIndex],
+                isLongterm: false,
+              };
+              return { ...conv, history: updatedHistory };
+            }
+            return conv;
+          })
+        );
+        setSavingToLongTerm(null);
+        return;
+      }
+
+      // Use the memory endpoint to forget it
+      const response = await fetch("/api/memory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memoryId: findData.memoryId,
+          userId: user.id,
+        }),
+      });
+
+      // Handle response
+      console.log(`Forget response status: ${response.status}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          console.log("Successfully removed from long-term memory!");
+          alert("Successfully removed from long-term memory!");
+
+          // Update local state to reflect the change
+          setConversations((prev) =>
+            prev.map((conv) => {
+              if (conv.id === conversationId) {
+                const updatedHistory = [...conv.history];
+                updatedHistory[messageIndex] = {
+                  ...updatedHistory[messageIndex],
+                  isLongterm: false,
+                };
+                return { ...conv, history: updatedHistory };
+              }
+              return conv;
+            })
+          );
+        } else {
+          console.error("API returned success: false", data);
+          alert(
+            `Failed to remove: ${data.error || "Unknown error"}${
+              data.details ? ` - ${data.details}` : ""
+            }`
+          );
+        }
+      } else {
+        try {
+          const errorData = await response.json();
+          console.error("Error removing memory:", errorData);
+          alert(
+            `Failed to remove: ${errorData.error || "Unknown error"}${
+              errorData.details ? ` - ${errorData.details}` : ""
+            }`
+          );
+        } catch (jsonError) {
+          console.error("Error parsing error response:", jsonError);
+          alert(
+            `Failed to remove from long-term memory: Error status ${response.status}`
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Error removing from long-term memory:", error);
+      alert(
+        `Failed to remove from long-term memory: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setSavingToLongTerm(null);
+    }
+  };
+
+  // Update the saveToLongTermMemory function to update local state after saving
+  const saveToLongTermMemory = async (
+    conversationId: string,
+    messageIndex: number
+  ) => {
+    if (!user?.id) {
+      alert("You must be logged in to save to long-term memory");
+      return;
+    }
+
+    const conversation = conversations.find((c) => c.id === conversationId);
+    if (!conversation || messageIndex >= conversation.history.length) {
+      console.error("Conversation or message not found");
+      return;
+    }
+
+    const message = conversation.history[messageIndex];
+    // Set the saving indicator
+    setSavingToLongTerm(messageIndex);
+
+    try {
+      // Get the memory ID for this message
+      const findMemoryResponse = await fetch("/api/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversationId,
+          userMessage: message.user,
+          userId: user.id,
+        }),
+      });
+
+      // Log the status code
+      if (!findMemoryResponse.ok) {
+        const errorData = await findMemoryResponse.json();
+        console.error("Error finding memory:", errorData);
+
+        if (findMemoryResponse.status === 404) {
+          alert(
+            "Could not find this message in the database. It may not have been properly saved."
+          );
+        } else {
+          alert(`Could not find memory: ${errorData.error || "Unknown error"}`);
+        }
+        return;
+      }
+
+      const findData = await findMemoryResponse.json();
+
+      if (!findData.memoryId) {
+        alert("Could not find the memory for this message");
+        return;
+      }
+
       // Use the memory endpoint to promote it
-      console.log("Step 3: Promoting memory to long-term...");
       const response = await fetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -890,12 +1044,23 @@ export default function Chat({
       });
 
       // Handle response
-      console.log(`Promotion response status: ${response.status}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          console.log("Successfully saved to long-term memory!");
-          alert("Successfully saved to long-term memory!");
+          // Update local state to reflect the change
+          setConversations((prev) =>
+            prev.map((conv) => {
+              if (conv.id === conversationId) {
+                const updatedHistory = [...conv.history];
+                updatedHistory[messageIndex] = {
+                  ...updatedHistory[messageIndex],
+                  isLongterm: true,
+                };
+                return { ...conv, history: updatedHistory };
+              }
+              return conv;
+            })
+          );
         } else {
           console.error("API returned success: false", data);
           alert(
@@ -1128,6 +1293,7 @@ export default function Chat({
               (item: any) => ({
                 user: item.userMessage,
                 ai: item.aiResponse,
+                isLongterm: item.metadata?.isLongterm || false,
               })
             );
 
@@ -1196,6 +1362,36 @@ export default function Chat({
     }
   }, [conversations, activeConversationId]);
 
+  // Start title edit mode
+  const startTitleEdit = () => {
+    setNewTitle(getActiveConversation().title);
+    setIsEditingTitle(true);
+  };
+
+  // Cancel title edit
+  const cancelTitleEdit = () => {
+    setIsEditingTitle(false);
+    setNewTitle("");
+  };
+
+  // Submit title update
+  const submitTitleUpdate = async () => {
+    if (!newTitle.trim()) {
+      return;
+    }
+
+    setUpdatingTitle(true);
+    try {
+      await renameConversation(activeConversationId, newTitle.trim());
+      setIsEditingTitle(false);
+    } catch (error) {
+      console.error("Error updating title:", error);
+      alert("Failed to update the conversation title. Please try again.");
+    } finally {
+      setUpdatingTitle(false);
+    }
+  };
+
   return (
     <Flex h="100%" flexDirection="column" bg="black" color="white">
       {/* Top Bar with Conversation Title and Controls */}
@@ -1209,78 +1405,65 @@ export default function Chat({
         justifyContent="space-between"
         alignItems="center"
       >
-        {/* Current Conversation Title */}
-        <Heading size="md" fontWeight="medium" color="white">
-          {getActiveConversation().title || "New Conversation"}
-        </Heading>
-
-        {/* Authentication/Login Controls */}
-        <Box display="flex" alignItems="center" gap={2}>
-          {user ? (
-            <>
-              <Text fontSize="sm" color="gray.300">
-                Logged in as: {user.email}
-              </Text>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/longterm-memories")}
-                borderColor="gray.600"
-                color="gray.200"
-                _hover={{ bg: "gray.700" }}
-              >
-                View Memories
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                borderColor="gray.600"
-                color="gray.200"
-                _hover={{ bg: "gray.700" }}
-              >
-                Sign Out
-              </Button>
-            </>
-          ) : authChecked ? (
+        {/* Current Conversation Title with Edit Mode */}
+        {isEditingTitle ? (
+          <Flex alignItems="center" flex="1" mr={2}>
+            <Input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              size="md"
+              fontSize="md"
+              fontWeight="medium"
+              bg="gray.800"
+              color="white"
+              border="1px solid"
+              borderColor="blue.400"
+              mr={2}
+              placeholder="Enter new title"
+              autoFocus
+              onKeyPress={(e) => {
+                if (e.key === "Enter") submitTitleUpdate();
+              }}
+            />
             <Button
-              variant="outline"
               size="sm"
-              onClick={handleLogin}
-              borderColor="gray.600"
-              color="gray.200"
-              _hover={{ bg: "gray.700" }}
+              colorScheme="blue"
+              onClick={submitTitleUpdate}
+              isLoading={updatingTitle}
+              mr={1}
             >
-              Sign In
+              Save
             </Button>
-          ) : null}
-        </Box>
-      </Box>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={cancelTitleEdit}
+              disabled={updatingTitle}
+            >
+              Cancel
+            </Button>
+          </Flex>
+        ) : (
+          <Flex alignItems="center">
+            <Heading size="md" fontWeight="medium" color="white">
+              {getActiveConversation().title || "New Conversation"}
+            </Heading>
+            <Button
+              size="sm"
+              variant="ghost"
+              ml={2}
+              onClick={startTitleEdit}
+              display={activeConversationId ? "inline-flex" : "none"}
+              _hover={{ bg: "gray.700" }}
+              title="Edit title"
+            >
+              ✐
+            </Button>
+          </Flex>
+        )}
 
-      {/* Main Chat Area - Now directly in the column flex layout without the sidebar conditional */}
-      <Box
-        flex="1"
-        p={4}
-        display="flex"
-        flexDirection="column"
-        h="100%"
-        overflow="hidden"
-        bg="black"
-      >
-        {/* Chat Controls */}
-        <Box display="flex" justifyContent="flex-end" gap={2} mb={4}>
-          <Button
-            variant="outline"
-            size="sm"
-            colorScheme="blue"
-            onClick={() => router.push("/chat/new")}
-            display={{ base: "inline-flex", md: "none" }}
-            borderColor="gray.600"
-            color="gray.200"
-            _hover={{ bg: "gray.800" }}
-          >
-            New
-          </Button>
+        {/* Move Clear Chat button to title bar */}
+        <Box display="flex" alignItems="center" gap={2}>
           <Button
             variant="outline"
             size="sm"
@@ -1295,6 +1478,38 @@ export default function Chat({
             _hover={{ bg: "red.900" }}
           >
             Clear Chat
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Main Chat Area - Now directly in the column flex layout without the sidebar conditional */}
+      <Box
+        flex="1"
+        p={4}
+        display="flex"
+        flexDirection="column"
+        h="100%"
+        overflow="hidden"
+        bg="black"
+      >
+        {/* Chat Controls */}
+        <Box
+          display="flex"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={4}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            colorScheme="blue"
+            onClick={() => router.push("/chat/new")}
+            display={{ base: "inline-flex", md: "none" }}
+            borderColor="gray.600"
+            color="gray.200"
+            _hover={{ bg: "gray.800" }}
+          >
+            New
           </Button>
         </Box>
 
@@ -1413,19 +1628,36 @@ export default function Chat({
                                 <Button
                                   size="xs"
                                   ml={2}
-                                  colorScheme="purple"
+                                  variant="outline"
                                   isLoading={savingToLongTerm === idx}
                                   onClick={() =>
-                                    saveToLongTermMemory(
-                                      activeConversationId,
-                                      idx
-                                    )
+                                    msg.isLongterm
+                                      ? forgetFromLongTermMemory(
+                                          activeConversationId,
+                                          idx
+                                        )
+                                      : saveToLongTermMemory(
+                                          activeConversationId,
+                                          idx
+                                        )
                                   }
-                                  bg="purple.600"
-                                  _hover={{ bg: "purple.500" }}
-                                  title="Save this exchange to your long-term memory for AI to reference in future conversations"
+                                  borderColor={
+                                    msg.isLongterm ? "red.600" : "gray.600"
+                                  }
+                                  color={
+                                    msg.isLongterm ? "red.300" : "gray.300"
+                                  }
+                                  _hover={{
+                                    bg: msg.isLongterm ? "red.900" : "gray.800",
+                                    color: "white",
+                                  }}
+                                  title={
+                                    msg.isLongterm
+                                      ? "Remove this exchange from your long-term memory"
+                                      : "Save this exchange to your long-term memory for AI to reference in future conversations"
+                                  }
                                 >
-                                  Save to Memory
+                                  {msg.isLongterm ? "Forget" : "Remember"}
                                 </Button>
                               )}
                             </Box>
@@ -1497,7 +1729,7 @@ export default function Chat({
                       disabled={!user}
                     />
                     <Text fontSize="sm" ml={2} color="gray.300">
-                      Save to Memory
+                      Remember
                     </Text>
                   </Box>
                 )}
