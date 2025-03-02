@@ -4,28 +4,26 @@ import {
   Box,
   Input,
   Button,
-  Stack,
   Text,
-  Code,
-  Link,
-  Table,
-  List,
-  ListItem,
   Heading,
-  Separator,
   Flex,
   Spinner,
 } from "@chakra-ui/react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { getCurrentUser, signOut } from "@/utils/supabase-client";
 import { useRouter } from "next/navigation";
 
 // Generate a unique conversation ID for local storage
 function generateConversationId() {
   return `conv-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
+}
+
+// Utility function to normalize isLongterm flag checking
+function isLongtermMemory(item: any): boolean {
+  return Boolean(
+    item.is_longterm === true ||
+      item.metadata?.isLongterm === true ||
+      item.isLongterm === true
+  );
 }
 
 // Interface for conversation
@@ -185,15 +183,63 @@ export default function Chat({
                 })
                 .then((data) => {
                   console.log("Chat: Direct server fetch result:", data);
+
+                  // Log the raw conversation data from the direct fetch
+                  console.log("==== DIRECT FETCH RAW DATABASE DATA ====");
+                  if (data.conversation && data.conversation.history) {
+                    data.conversation.history.forEach(
+                      (item: any, index: number) => {
+                        console.log(`DIRECT FETCH DB ITEM ${index}:`, {
+                          id: item.id,
+                          user_message:
+                            item.userMessage?.substring(0, 30) + "...",
+                          is_longterm: item.is_longterm,
+                          metadata: JSON.stringify(item.metadata),
+                          hasMetadata: !!item.metadata,
+                          metadataIsLongterm: item.metadata?.isLongterm,
+                        });
+                      }
+                    );
+                  }
+
                   if (data.conversation && data.conversation.history) {
                     // Convert the server history format to client format
                     const formattedHistory = data.conversation.history.map(
-                      (item: any) => ({
-                        user: item.userMessage,
-                        ai: item.aiResponse,
-                        isLongterm: item.metadata?.isLongterm || false,
-                      })
+                      (item: any) => {
+                        // Log the status of both flags for debugging
+                        console.log(
+                          `Memory item ${item.id || "unknown"}: is_longterm=${
+                            item.is_longterm
+                          }, metadata.isLongterm=${item.metadata?.isLongterm}`
+                        );
+
+                        // Use our utility function to determine longterm status
+                        const itemIsLongterm = isLongtermMemory(item);
+                        console.log(
+                          `MEMORY STATUS: isLongterm=${
+                            itemIsLongterm ? "TRUE" : "FALSE"
+                          } (using utility function)`
+                        );
+
+                        return {
+                          user: item.userMessage,
+                          ai: item.aiResponse,
+                          isLongterm: itemIsLongterm,
+                        };
+                      }
                     );
+
+                    // Log the transformed history objects in direct fetch
+                    console.log(
+                      "==== DIRECT FETCH MAPPED CONVERSATION HISTORY ===="
+                    );
+                    formattedHistory.forEach((item: any, index: number) => {
+                      console.log(`DIRECT MAPPED ITEM ${index}:`, {
+                        user: item.user?.substring(0, 30) + "...",
+                        isLongterm: item.isLongterm,
+                        isLongtermType: typeof item.isLongterm,
+                      });
+                    });
 
                     // Update the conversation with the fetched history
                     const updatedConversation = {
@@ -837,6 +883,12 @@ export default function Chat({
     }
 
     const message = conversation.history[messageIndex];
+    console.log("FORGET FROM LONGTERM - BEFORE ACTION:", {
+      messageIndex,
+      messageIsLongterm: message.isLongterm,
+      utilityFunctionResult: isLongtermMemory(message),
+    });
+
     console.log(
       `Removing message from long-term memory: "${message.user.substring(
         0,
@@ -887,38 +939,20 @@ export default function Chat({
         return;
       }
 
-      // Check if the memory is part of an active conversation
-      // If it is, we should not delete it, but just mark it as non-longterm in our UI
-      const isActiveConversation = conversations.some(
-        (c) => c.id === conversationId
+      // Use the memory endpoint to forget it, passing params as URL query params
+      console.log(
+        `Step 3: Calling API to update memory status for ID: ${findData.memoryId}`
       );
-      if (isActiveConversation) {
-        // Just update the UI to reflect the change visually
-        setConversations((prev) =>
-          prev.map((conv) => {
-            if (conv.id === conversationId) {
-              const updatedHistory = [...conv.history];
-              updatedHistory[messageIndex] = {
-                ...updatedHistory[messageIndex],
-                isLongterm: false,
-              };
-              return { ...conv, history: updatedHistory };
-            }
-            return conv;
-          })
-        );
-        setSavingToLongTerm(null);
-        return;
-      }
 
-      // Use the memory endpoint to forget it
-      const response = await fetch("/api/memory", {
+      // Important: Use URL parameters for DELETE instead of body
+      const deleteUrl = `/api/memory?userId=${encodeURIComponent(
+        user.id
+      )}&memoryId=${encodeURIComponent(findData.memoryId)}`;
+      console.log(`DELETE request URL: ${deleteUrl}`);
+
+      const response = await fetch(deleteUrl, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          memoryId: findData.memoryId,
-          userId: user.id,
-        }),
       });
 
       // Handle response
@@ -927,7 +961,14 @@ export default function Chat({
         const data = await response.json();
         if (data.success) {
           console.log("Successfully removed from long-term memory!");
-          alert("Successfully removed from long-term memory!");
+
+          // Only show alert if not an active conversation to avoid disrupting the chat flow
+          const isActiveConversation = conversations.some(
+            (c) => c.id === conversationId
+          );
+          if (!isActiveConversation) {
+            alert("Successfully removed from long-term memory!");
+          }
 
           // Update local state to reflect the change
           setConversations((prev) =>
@@ -938,6 +979,14 @@ export default function Chat({
                   ...updatedHistory[messageIndex],
                   isLongterm: false,
                 };
+
+                console.log("FORGET FROM LONGTERM - AFTER SUCCESS:", {
+                  messageIndex,
+                  originalIsLongterm: conv.history[messageIndex].isLongterm,
+                  newIsLongterm: false,
+                  resultObject: updatedHistory[messageIndex],
+                });
+
                 return { ...conv, history: updatedHistory };
               }
               return conv;
@@ -996,10 +1045,17 @@ export default function Chat({
     }
 
     const message = conversation.history[messageIndex];
+    console.log("SAVE TO LONGTERM - BEFORE ACTION:", {
+      messageIndex,
+      messageIsLongterm: message.isLongterm,
+      utilityFunctionResult: isLongtermMemory(message),
+    });
+
     // Set the saving indicator
     setSavingToLongTerm(messageIndex);
 
     try {
+      console.log("Step 1: Finding memory ID for this message...");
       // Get the memory ID for this message
       const findMemoryResponse = await fetch("/api/memory", {
         method: "PUT",
@@ -1012,6 +1068,7 @@ export default function Chat({
       });
 
       // Log the status code
+      console.log(`Find memory response status: ${findMemoryResponse.status}`);
       if (!findMemoryResponse.ok) {
         const errorData = await findMemoryResponse.json();
         console.error("Error finding memory:", errorData);
@@ -1027,6 +1084,7 @@ export default function Chat({
       }
 
       const findData = await findMemoryResponse.json();
+      console.log(`Step 2: Found memory ID: ${findData.memoryId}`);
 
       if (!findData.memoryId) {
         alert("Could not find the memory for this message");
@@ -1034,6 +1092,9 @@ export default function Chat({
       }
 
       // Use the memory endpoint to promote it
+      console.log(
+        `Step 3: Calling API to promote memory ID: ${findData.memoryId} to long-term`
+      );
       const response = await fetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1044,9 +1105,20 @@ export default function Chat({
       });
 
       // Handle response
+      console.log(`Promote response status: ${response.status}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
+          console.log("Successfully saved to long-term memory!");
+
+          // Only show alert if not an active conversation to avoid disrupting the chat flow
+          const isActiveConversation = conversations.some(
+            (c) => c.id === conversationId
+          );
+          if (!isActiveConversation) {
+            alert("Successfully saved to long-term memory!");
+          }
+
           // Update local state to reflect the change
           setConversations((prev) =>
             prev.map((conv) => {
@@ -1056,6 +1128,14 @@ export default function Chat({
                   ...updatedHistory[messageIndex],
                   isLongterm: true,
                 };
+
+                console.log("SAVE TO LONGTERM - AFTER SUCCESS:", {
+                  messageIndex,
+                  originalIsLongterm: conv.history[messageIndex].isLongterm,
+                  newIsLongterm: true,
+                  resultObject: updatedHistory[messageIndex],
+                });
+
                 return { ...conv, history: updatedHistory };
               }
               return conv;
@@ -1280,6 +1360,21 @@ export default function Chat({
           const data = await response.json();
           console.log("loadSpecificConversation: Server response:", data);
 
+          // Log the raw conversation data from the database
+          console.log("==== RAW DATABASE DATA ====");
+          if (data.conversation && data.conversation.history) {
+            data.conversation.history.forEach((item: any, index: number) => {
+              console.log(`DB ITEM ${index}:`, {
+                id: item.id,
+                user_message: item.userMessage?.substring(0, 30) + "...",
+                is_longterm: item.is_longterm,
+                metadata: JSON.stringify(item.metadata),
+                hasMetadata: !!item.metadata,
+                metadataIsLongterm: item.metadata?.isLongterm,
+              });
+            });
+          }
+
           if (data.conversation) {
             // Ensure history is always an array
             data.conversation.history = data.conversation.history || [];
@@ -1290,12 +1385,39 @@ export default function Chat({
 
             // IMPORTANT: Convert the server history format (userMessage/aiResponse) to client format (user/ai)
             const formattedHistory = data.conversation.history.map(
-              (item: any) => ({
-                user: item.userMessage,
-                ai: item.aiResponse,
-                isLongterm: item.metadata?.isLongterm || false,
-              })
+              (item: any) => {
+                // Log the status of both flags for debugging
+                console.log(
+                  `Memory item ${item.id || "unknown"}: is_longterm=${
+                    item.is_longterm
+                  }, metadata.isLongterm=${item.metadata?.isLongterm}`
+                );
+
+                // Use our utility function to determine longterm status
+                const itemIsLongterm = isLongtermMemory(item);
+                console.log(
+                  `MEMORY STATUS: isLongterm=${
+                    itemIsLongterm ? "TRUE" : "FALSE"
+                  } (using utility function)`
+                );
+
+                return {
+                  user: item.userMessage,
+                  ai: item.aiResponse,
+                  isLongterm: itemIsLongterm,
+                };
+              }
             );
+
+            // Log the transformed history objects
+            console.log("==== MAPPED CONVERSATION HISTORY ====");
+            formattedHistory.forEach((item: any, index: number) => {
+              console.log(`MAPPED ITEM ${index}:`, {
+                user: item.user?.substring(0, 30) + "...",
+                isLongterm: item.isLongterm,
+                isLongtermType: typeof item.isLongterm,
+              });
+            });
 
             const formattedConversation = {
               id: data.conversation.id,
@@ -1359,6 +1481,26 @@ export default function Chat({
     if (chatContainerRef.current && activeConvo.history?.length > 0) {
       chatContainerRef.current.scrollTop =
         chatContainerRef.current.scrollHeight;
+    }
+  }, [conversations, activeConversationId]);
+
+  // Add debug effect for conversation history
+  useEffect(() => {
+    const activeConvo = getActiveConversation();
+    if (activeConvo.history?.length > 0) {
+      console.log("🔍 DETAILED HISTORY INSPECTION:");
+      console.log("==== FINAL CONVERSATION HISTORY IN STATE ====");
+      activeConvo.history.forEach((msg, idx) => {
+        console.log(`📝 Message ${idx}:`, {
+          user: msg.user?.substring(0, 30) + "...",
+          ai: msg.ai?.substring(0, 30) + "...",
+          isLongterm: msg.isLongterm,
+          isLongtermType: typeof msg.isLongterm,
+          allProperties: Object.keys(msg),
+          buttonText: isLongtermMemory(msg) ? "FORGET" : "REMEMBER",
+          utilityFunctionResult: isLongtermMemory(msg),
+        });
+      });
     }
   }, [conversations, activeConversationId]);
 
@@ -1569,6 +1711,14 @@ export default function Chat({
                     <Box>
                       {activeConvo.history.map((msg, idx) => {
                         console.log(`Rendering message ${idx}:`, msg);
+                        // Add more detailed debugging about the isLongterm status
+                        console.log(
+                          `MESSAGE ${idx} LONGTERM STATUS: ${
+                            Boolean(msg.isLongterm)
+                              ? "TRUE (should show FORGET)"
+                              : "FALSE (should show REMEMBER)"
+                          }`
+                        );
 
                         // Check for alternative property names that might exist
                         const hasUserMessage = "userMessage" in msg;
@@ -1624,41 +1774,61 @@ export default function Chat({
                                 )}
                               </Box>
 
-                              {/* Add Save to Memory button for authenticated users */}
+                              {/* Save to Memory button with fixed logic */}
                               {user && (
                                 <Button
                                   size="xs"
                                   ml={2}
                                   variant="outline"
                                   isLoading={savingToLongTerm === idx}
-                                  onClick={() =>
-                                    msg.isLongterm
-                                      ? forgetFromLongTermMemory(
-                                          activeConversationId,
-                                          idx
-                                        )
-                                      : saveToLongTermMemory(
-                                          activeConversationId,
-                                          idx
-                                        )
-                                  }
+                                  onClick={() => {
+                                    // Use our utility function for consistency
+                                    const currentStatus = isLongtermMemory(msg);
+                                    console.log(
+                                      `BUTTON ${idx} CLICKED - Status check using utility function: ${
+                                        currentStatus
+                                          ? "TRUE (forget)"
+                                          : "FALSE (remember)"
+                                      }`
+                                    );
+
+                                    if (currentStatus) {
+                                      forgetFromLongTermMemory(
+                                        activeConversationId,
+                                        idx
+                                      );
+                                    } else {
+                                      saveToLongTermMemory(
+                                        activeConversationId,
+                                        idx
+                                      );
+                                    }
+                                  }}
                                   borderColor={
-                                    msg.isLongterm ? "red.600" : "gray.600"
+                                    isLongtermMemory(msg)
+                                      ? "red.600"
+                                      : "gray.600"
                                   }
                                   color={
-                                    msg.isLongterm ? "red.300" : "gray.300"
+                                    isLongtermMemory(msg)
+                                      ? "red.300"
+                                      : "gray.300"
                                   }
                                   _hover={{
-                                    bg: msg.isLongterm ? "red.900" : "gray.800",
+                                    bg: isLongtermMemory(msg)
+                                      ? "red.900"
+                                      : "gray.800",
                                     color: "white",
                                   }}
                                   title={
-                                    msg.isLongterm
+                                    isLongtermMemory(msg)
                                       ? "Remove this exchange from your long-term memory"
                                       : "Save this exchange to your long-term memory for AI to reference in future conversations"
                                   }
                                 >
-                                  {msg.isLongterm ? "Forget" : "Remember"}
+                                  {isLongtermMemory(msg)
+                                    ? "Forget"
+                                    : "Remember"}
                                 </Button>
                               )}
                             </Box>

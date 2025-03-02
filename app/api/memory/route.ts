@@ -567,7 +567,7 @@ export async function DELETE(request: Request) {
     // Check if memory exists and belongs to user
     const { data: memoryData, error: memoryError } = await supabaseServer
       .from("ai_memories")
-      .select("user_id, metadata, conversation_id")
+      .select("user_id, metadata, conversation_id, is_longterm")
       .eq("id", memoryId)
       .single();
 
@@ -660,6 +660,16 @@ export async function DELETE(request: Request) {
     // 2. There is no conversation_id to check
     // So we'll update the is_longterm flag as before
     console.log(`Updating memory ${memoryId} to set is_longterm=false`);
+
+    // Check for inconsistencies between column and metadata
+    if (memoryData.is_longterm !== (memoryData.metadata?.isLongterm === true)) {
+      console.log(
+        `Memory ${memoryId} has inconsistent long-term flags, fixing both`
+      );
+      console.log(
+        `Current state: is_longterm=${memoryData.is_longterm}, metadata.isLongterm=${memoryData.metadata?.isLongterm}`
+      );
+    }
 
     const updatedMetadata = {
       ...memoryData.metadata,
@@ -803,77 +813,142 @@ export async function PUT(request: Request) {
       );
     }
 
+    // Format of content in the database: "USER: {message}\nAI: {response}"
+    // We need to search for the user message part
+    const { data: memories, error: searchError } = await client
+      .from("ai_memories")
+      .select("id, content, metadata, conversation_id, created_at")
+      .eq("user_id", userId)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false });
+
+    if (searchError) {
+      console.error("Error searching memories:", searchError);
+      return NextResponse.json(
+        {
+          error: "Failed to search memories",
+          success: false,
+          details: searchError.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!memories || memories.length === 0) {
+      console.log(`No memories found for conversation: ${conversationId}`);
+      return NextResponse.json(
+        {
+          error: "No memories found for this conversation",
+          success: false,
+          details: `No memories exist for conversation ID: ${conversationId}`,
+        },
+        { status: 404 }
+      );
+    }
+
+    console.log(
+      `Found ${memories.length} memories for conversation, searching for best match...`
+    );
+
+    // Find the memory that contains the user message
+    let bestMatch = null;
+    let bestScore = -1;
+
     // Create a normalized version of the user message for matching
     const normalizedUserMessage = userMessage.replace(/\s+/g, "").toLowerCase();
+    console.log(
+      `Normalized user message to match: ${normalizedUserMessage.substring(
+        0,
+        50
+      )}...`
+    );
 
-    try {
-      console.log(
-        `Finding memory for message in conversation: ${conversationId}`
-      );
+    // First, try to find an exact match by extracting user part
+    for (const memory of memories) {
+      try {
+        // Extract the USER part from "USER: {message}\nAI: {response}"
+        const parts = memory.content.split("\nAI:");
+        if (parts.length >= 1) {
+          const userPart = parts[0].replace("USER:", "").trim();
 
-      // Format of content in the database: "USER: {message}\nAI: {response}"
-      // We need to search for the user message part
-      const { data: memories, error: searchError } = await client
-        .from("ai_memories")
-        .select("id, content, created_at")
-        .eq("user_id", userId)
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: false });
+          // Log for debugging
+          console.log(`Comparing with memory ${memory.id}:`);
+          console.log(`- Memory USER part: ${userPart.substring(0, 50)}...`);
+          console.log(`- Looking for: ${userMessage.substring(0, 50)}...`);
 
-      if (searchError) {
-        console.error("Error searching memories:", searchError);
-        return NextResponse.json(
-          {
-            error: "Failed to search memories",
-            success: false,
-            details: searchError.message,
-          },
-          { status: 500 }
-        );
+          // Check for exact match first
+          if (userPart === userMessage) {
+            console.log(`EXACT MATCH FOUND: Memory ID ${memory.id}`);
+            return NextResponse.json({
+              memoryId: memory.id,
+              success: true,
+            });
+          }
+
+          // Next, try normalized comparison
+          const normalizedContent = userPart.replace(/\s+/g, "").toLowerCase();
+
+          // Calculate similarity score (higher is better)
+          let score = 0;
+
+          // First check if one string contains the other completely
+          if (
+            normalizedContent.includes(normalizedUserMessage) ||
+            normalizedUserMessage.includes(normalizedContent)
+          ) {
+            // Boost score for complete containment
+            score += 1000;
+          }
+
+          // Then check for substring matching (beginning of the user message is most important)
+          const searchSubstring = normalizedUserMessage.substring(
+            0,
+            Math.min(50, normalizedUserMessage.length)
+          );
+
+          if (normalizedContent.includes(searchSubstring)) {
+            score += 500;
+
+            // Add additional points for matching percentage
+            const matchPercent =
+              searchSubstring.length / normalizedUserMessage.length;
+            score += Math.floor(matchPercent * 100);
+          }
+
+          // Log score for debugging
+          if (score > 0) {
+            console.log(`Potential match (score ${score}): ${memory.id}`);
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = memory;
+          }
+        }
+      } catch (error) {
+        console.error(`Error parsing memory ${memory.id}:`, error);
       }
+    }
 
-      if (!memories || memories.length === 0) {
-        console.log(`No memories found for conversation: ${conversationId}`);
-        return NextResponse.json(
-          {
-            error: "No memories found for this conversation",
-            success: false,
-            details: `No memories exist for conversation ID: ${conversationId}`,
-          },
-          { status: 404 }
-        );
-      }
-
-      console.log(
-        `Found ${memories.length} memories for conversation, searching for best match...`
-      );
-
-      // Find the memory that contains the user message
-      let bestMatch = null;
-      let bestScore = -1;
-
+    // If we haven't found anything yet, fall back to the original method
+    if (!bestMatch) {
       for (const memory of memories) {
-        // Extract the user part from "USER: {message}\nAI: {response}"
+        // Try original matching method as fallback
         const normalizedContent = memory.content
           .replace(/\s+/g, "")
           .toLowerCase();
 
         // Check if memory content contains the start of the user message (partial match)
-        // Using a substring of userMessage for more reliable matching
         const searchSubstring = normalizedUserMessage.substring(
           0,
           Math.min(30, normalizedUserMessage.length)
         );
 
         if (normalizedContent.includes(searchSubstring)) {
-          // Simple scoring based on memory length (for consistent results)
+          // Simple scoring based on memory length
           const score = memory.content.length;
 
-          // Log the potential match
-          console.log(`Potential match (score ${score}): ${memory.id}`);
-          console.log(
-            `Content substring: ${memory.content.substring(0, 50)}...`
-          );
+          console.log(`Fallback match (score ${score}): ${memory.id}`);
 
           if (score > bestScore) {
             bestScore = score;
@@ -881,42 +956,29 @@ export async function PUT(request: Request) {
           }
         }
       }
-
-      if (bestMatch) {
-        console.log(
-          `Found best memory match: ${bestMatch.id} (score: ${bestScore})`
-        );
-        return NextResponse.json({
-          memoryId: bestMatch.id,
-          success: true,
-        });
-      }
-
-      console.log(
-        `No matching memory found for message in conversation: ${conversationId}`
-      );
-      return NextResponse.json(
-        {
-          error: "No matching memory found for this message",
-          success: false,
-          details: "Message content did not match any stored memories",
-        },
-        { status: 404 }
-      );
-    } catch (queryError) {
-      console.error("Database query error:", queryError);
-      return NextResponse.json(
-        {
-          error: "Database error while searching memories",
-          success: false,
-          details:
-            queryError instanceof Error
-              ? queryError.message
-              : "Unknown database error",
-        },
-        { status: 500 }
-      );
     }
+
+    if (bestMatch) {
+      console.log(
+        `Found best memory match: ${bestMatch.id} (score: ${bestScore})`
+      );
+      return NextResponse.json({
+        memoryId: bestMatch.id,
+        success: true,
+      });
+    }
+
+    console.log(
+      `No matching memory found for message in conversation: ${conversationId}`
+    );
+    return NextResponse.json(
+      {
+        error: "No matching memory found for this message",
+        success: false,
+        details: "Message content did not match any stored memories",
+      },
+      { status: 404 }
+    );
   } catch (error) {
     console.error("API Error:", error);
     return NextResponse.json(

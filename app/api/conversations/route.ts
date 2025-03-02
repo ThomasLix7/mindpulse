@@ -23,6 +23,8 @@ interface MemoryRow {
     isLongterm: boolean;
   };
   created_at?: string;
+  is_longterm?: boolean;
+  user_id?: string;
 }
 
 // GET all conversations for a user
@@ -202,7 +204,7 @@ async function getConversationHistory(conversationId: string, userId: string) {
       const { data: columnResultRows, error: columnQueryError } =
         await supabaseClient
           .from("ai_memories")
-          .select("content, metadata, created_at")
+          .select("content, metadata, created_at, is_longterm, user_id")
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: true });
 
@@ -222,7 +224,7 @@ async function getConversationHistory(conversationId: string, userId: string) {
         const { data: metadataResultRows, error: metadataQueryError } =
           await supabaseClient
             .from("ai_memories")
-            .select("content, metadata")
+            .select("content, metadata, created_at, is_longterm, user_id")
             .filter("metadata->>'conversationId'", "eq", conversationId)
             .order("metadata->>'timestamp'", { ascending: true });
 
@@ -237,19 +239,11 @@ async function getConversationHistory(conversationId: string, userId: string) {
           console.log("No records found with either method");
         }
       }
-
-      // DEBUG: Log the first result to see its structure
-      if (resultRows && resultRows.length > 0) {
-      } else {
-        console.log("No results found for this conversation");
-        // Return successfully with empty history for new conversations
-        // instead of potentially causing repeated fetch attempts
-        return NextResponse.json({
-          history: [],
-          success: true,
-          isNewConversation: true,
-        });
-      }
+      return NextResponse.json({
+        history: [],
+        success: true,
+        isNewConversation: true,
+      });
     }
 
     // Process the history
@@ -280,11 +274,13 @@ async function getConversationHistory(conversationId: string, userId: string) {
           row.metadata?.timestamp ||
           (row.created_at ? new Date(row.created_at).getTime() : Date.now());
 
-        // Add to history array
+        // Add to history array with longterm status
         history.push({
           userMessage,
           aiResponse,
           timestamp,
+          is_longterm: row.is_longterm,
+          metadata: row.metadata,
         });
       } catch (error) {
         // Skip entries that can't be parsed

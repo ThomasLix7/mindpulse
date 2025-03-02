@@ -359,8 +359,6 @@ async function promoteExistingMemory(
   userId: string
 ): Promise<boolean> {
   try {
-    console.log(`Promoting memory ${memoryId} to long-term for user ${userId}`);
-
     const vectorStore = await getVectorStore();
     if (!vectorStore) {
       console.error("Vector store is null - initialization failed");
@@ -380,8 +378,6 @@ async function promoteExistingMemory(
       console.log("Using client from vectorStore.client");
     } else {
       console.error("Vector store has invalid structure - no client available");
-      console.log("Vector store type:", typeof vectorStore);
-      console.log("Vector store properties:", Object.keys(vectorStore));
       return false;
     }
 
@@ -391,7 +387,6 @@ async function promoteExistingMemory(
     }
 
     // First verify the memory belongs to this user
-    console.log(`Querying database for memory ID: ${memoryId}`);
     const { data: memoryData, error: fetchError } = await client
       .from("ai_memories")
       .select("*")
@@ -400,7 +395,6 @@ async function promoteExistingMemory(
 
     if (fetchError) {
       console.error("Error fetching memory to promote:", fetchError);
-      console.log("Memory ID that failed:", memoryId);
       return false;
     }
 
@@ -408,17 +402,6 @@ async function promoteExistingMemory(
       console.error(`Memory ID ${memoryId} not found in database`);
       return false;
     }
-
-    console.log(`Memory data found:`, {
-      id: memoryData.id,
-      content: memoryData.content
-        ? memoryData.content.substring(0, 50) + "..."
-        : null,
-      user_id: memoryData.user_id,
-      metadata_userId: memoryData.metadata?.userId,
-      is_longterm: memoryData.is_longterm,
-      metadata_isLongterm: memoryData.metadata?.isLongterm,
-    });
 
     // Check if memory belongs to the user
     const memoryUserId = memoryData.user_id || memoryData.metadata?.userId;
@@ -429,13 +412,25 @@ async function promoteExistingMemory(
       return false;
     }
 
-    // If it's already a long-term memory, no need to update
+    // If it's already a long-term memory in BOTH places, no need to update
     if (
-      memoryData.is_longterm === true ||
+      memoryData.is_longterm === true &&
       memoryData.metadata?.isLongterm === true
     ) {
-      console.log(`Memory ${memoryId} is already marked as long-term`);
+      console.log(
+        `Memory ${memoryId} is already marked as long-term in both fields`
+      );
       return true;
+    }
+
+    // If there's an inconsistency (one is true and one is false), we need to update both
+    if (memoryData.is_longterm !== (memoryData.metadata?.isLongterm === true)) {
+      console.log(
+        `Memory ${memoryId} has inconsistent long-term flags. Fixing both fields...`
+      );
+      console.log(
+        `Current state: is_longterm=${memoryData.is_longterm}, metadata.isLongterm=${memoryData.metadata?.isLongterm}`
+      );
     }
 
     // Carefully merge the metadata to avoid overwriting existing fields
