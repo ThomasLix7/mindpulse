@@ -198,9 +198,6 @@ async function getConversationHistory(conversationId: string, userId: string) {
     if (vectorStore instanceof SupabaseVectorStore) {
       const supabaseClient = (vectorStore as any).client;
 
-      // UPDATED QUERY: Try both methods to ensure we find the conversation
-      console.log("Querying ai_memories table for conversation history");
-
       // Method 1: Use the dedicated conversation_id column
       const { data: columnResultRows, error: columnQueryError } =
         await supabaseClient
@@ -215,9 +212,6 @@ async function getConversationHistory(conversationId: string, userId: string) {
           columnQueryError
         );
       } else if (columnResultRows && columnResultRows.length > 0) {
-        console.log(
-          `Found ${columnResultRows.length} records using conversation_id column`
-        );
         resultRows = columnResultRows;
       } else {
         console.log(
@@ -238,9 +232,6 @@ async function getConversationHistory(conversationId: string, userId: string) {
             metadataQueryError
           );
         } else if (metadataResultRows && metadataResultRows.length > 0) {
-          console.log(
-            `Found ${metadataResultRows.length} records using metadata.conversationId`
-          );
           resultRows = metadataResultRows;
         } else {
           console.log("No records found with either method");
@@ -249,13 +240,8 @@ async function getConversationHistory(conversationId: string, userId: string) {
 
       // DEBUG: Log the first result to see its structure
       if (resultRows && resultRows.length > 0) {
-        console.log(
-          "First result row:",
-          JSON.stringify(resultRows[0], null, 2)
-        );
       } else {
         console.log("No results found for this conversation");
-
         // Return successfully with empty history for new conversations
         // instead of potentially causing repeated fetch attempts
         return NextResponse.json({

@@ -1393,17 +1393,29 @@ export default function Chat({
   };
 
   return (
-    <Flex h="100%" flexDirection="column" bg="black" color="white">
-      {/* Top Bar with Conversation Title and Controls */}
+    <Flex
+      h="92vh"
+      maxH="100vh"
+      flexDirection="column"
+      bg="black"
+      color="white"
+      overflow="hidden"
+      position="absolute"
+      bottom={0}
+      left={0}
+      right={0}
+    >
+      {/* Top Bar with Conversation Title and Controls - Fixed */}
       <Box
         w="100%"
-        bg="gray.900"
-        borderBottom="1px solid"
-        borderColor="gray.700"
         p={3}
         display="flex"
         justifyContent="space-between"
         alignItems="center"
+        position="sticky"
+        height="50px"
+        zIndex={2}
+        flexShrink={0}
       >
         {/* Current Conversation Title with Edit Mode */}
         {isEditingTitle ? (
@@ -1482,23 +1494,17 @@ export default function Chat({
         </Box>
       </Box>
 
-      {/* Main Chat Area - Now directly in the column flex layout without the sidebar conditional */}
+      {/* Chat Content - Scrollable area between fixed elements */}
       <Box
+        position="relative"
         flex="1"
-        p={4}
-        display="flex"
-        flexDirection="column"
-        h="100%"
-        overflow="hidden"
-        bg="black"
+        overflowY="auto"
+        overflowX="hidden"
+        ref={chatContainerRef}
+        minHeight={0} /* Critical for flex child scrolling */
       >
-        {/* Chat Controls */}
-        <Box
-          display="flex"
-          justifyContent="space-between"
-          alignItems="center"
-          mb={4}
-        >
+        {/* Mobile-only Chat Controls */}
+        <Box display="flex" justifyContent="space-between" alignItems="center">
           <Button
             variant="outline"
             size="sm"
@@ -1513,8 +1519,8 @@ export default function Chat({
           </Button>
         </Box>
 
-        {/* Chat History */}
-        <Box flex="1" overflowY="auto" mb={4} ref={chatContainerRef}>
+        {/* Chat Messages */}
+        <Box px={4} pb={4}>
           {historyLoading ? (
             <Box textAlign="center" py={6}>
               <Spinner size="sm" color="blue.400" mb={2} />
@@ -1530,11 +1536,6 @@ export default function Chat({
                   // Find the active conversation
                   const activeConvo = conversations.find(
                     (c) => c.id === activeConversationId
-                  );
-                  console.log("Active conversation:", activeConvo);
-                  console.log(
-                    "History length:",
-                    activeConvo?.history?.length || 0
                   );
 
                   // Add detailed history debugging
@@ -1584,10 +1585,10 @@ export default function Chat({
                         return (
                           <Box
                             key={idx}
-                            mb={4}
+                            mb={0}
                             p={3}
                             borderRadius="md"
-                            backgroundColor={userText ? "gray.800" : "gray.900"}
+                            backgroundColor={userText ? "black" : "gray.900"}
                           >
                             <Box
                               display="flex"
@@ -1613,7 +1614,7 @@ export default function Chat({
                                     mt={userText ? 3 : 0}
                                     mb={1}
                                   >
-                                    AI:
+                                    Lex:
                                   </Text>
                                 )}
                                 {aiText && (
@@ -1670,73 +1671,85 @@ export default function Chat({
             </>
           )}
         </Box>
+      </Box>
 
-        {/* Input Area */}
-        <Box borderTop="1px solid" borderColor="gray.700" pt={4}>
-          <form onSubmit={(e) => handleSubmit(e, saveAsLongTerm)}>
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask me anything..."
-              mb={2}
-              disabled={loading}
-              bg="gray.800"
-              color="white"
-              border="1px solid"
-              borderColor="gray.600"
-              _placeholder={{ color: "gray.500" }}
-              _hover={{ borderColor: "gray.500" }}
-              _focus={{
-                borderColor: "blue.400",
-                boxShadow: "0 0 0 1px #4299E1",
-              }}
-            />
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
+      {/* Input Area - Fixed at bottom */}
+      <Box
+        position="sticky"
+        bottom={0}
+        left={0}
+        right={0}
+        borderTop="1px solid"
+        borderColor="gray.700"
+        p={4}
+        bg="black"
+        zIndex={2}
+        flexShrink={0}
+        minHeight="100px"
+      >
+        <form onSubmit={(e) => handleSubmit(e, saveAsLongTerm)}>
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask me anything..."
+            mb={2}
+            disabled={loading}
+            bg="gray.800"
+            color="white"
+            border="1px solid"
+            borderColor="gray.600"
+            _placeholder={{ color: "gray.500" }}
+            _hover={{ borderColor: "gray.500" }}
+            _focus={{
+              borderColor: "blue.400",
+              boxShadow: "0 0 0 1px #4299E1",
+            }}
+          />
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            <Button
+              type="submit"
+              colorScheme="blue"
+              isLoading={loading}
+              bg="blue.600"
+              _hover={{ bg: "blue.500" }}
             >
-              <Button
-                type="submit"
-                colorScheme="blue"
-                isLoading={loading}
-                bg="blue.600"
-                _hover={{ bg: "blue.500" }}
-              >
-                Send
-              </Button>
+              Send
+            </Button>
 
-              <Box display="flex" alignItems="center" gap={4}>
+            <Box display="flex" alignItems="center" gap={4}>
+              <Box display="flex" alignItems="center">
+                <input
+                  type="checkbox"
+                  id="enableWebSearch"
+                  checked={enableWebSearch}
+                  onChange={(e) => setEnableWebSearch(e.target.checked)}
+                />
+                <Text fontSize="sm" ml={2} color="gray.300">
+                  Enable Web Search
+                </Text>
+              </Box>
+
+              {user && (
                 <Box display="flex" alignItems="center">
                   <input
                     type="checkbox"
-                    id="enableWebSearch"
-                    checked={enableWebSearch}
-                    onChange={(e) => setEnableWebSearch(e.target.checked)}
+                    id="saveToLongTerm"
+                    checked={saveAsLongTerm}
+                    onChange={(e) => setSaveAsLongTerm(e.target.checked)}
+                    disabled={!user}
                   />
                   <Text fontSize="sm" ml={2} color="gray.300">
-                    Enable Web Search
+                    Remember the conversation
                   </Text>
                 </Box>
-
-                {user && (
-                  <Box display="flex" alignItems="center">
-                    <input
-                      type="checkbox"
-                      id="saveToLongTerm"
-                      checked={saveAsLongTerm}
-                      onChange={(e) => setSaveAsLongTerm(e.target.checked)}
-                      disabled={!user}
-                    />
-                    <Text fontSize="sm" ml={2} color="gray.300">
-                      Remember
-                    </Text>
-                  </Box>
-                )}
-              </Box>
+              )}
             </Box>
-          </form>
-        </Box>
+          </Box>
+        </form>
       </Box>
     </Flex>
   );

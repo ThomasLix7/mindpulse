@@ -67,7 +67,6 @@ export default function ChatLayout({
 
     // Listen for conversation creation events
     const handleNewConversation = (event: any) => {
-      console.log("Layout received conversation-created event:", event.detail);
       setConversations((prev) => {
         // Check if conversation already exists to avoid duplicates
         if (prev.some((conv: any) => conv.id === event.detail.id)) {
@@ -131,20 +130,14 @@ export default function ChatLayout({
 
     // If we deleted the current conversation, redirect to a different page
     if (isCurrentConversation) {
-      console.log("Deleted the active conversation, redirecting...");
-
-      // Find another conversation to navigate to
       const remainingConversations = currentConversations.filter(
         (conv) => conv.id !== id
       );
 
       if (remainingConversations.length > 0) {
         const nextConversation = remainingConversations[0];
-        console.log(`Redirecting to next conversation: ${nextConversation.id}`);
         router.push(`/chat/${nextConversation.id}`);
       } else {
-        // If no conversations left, go to main chat page
-        console.log("No conversations left, redirecting to /chat");
         router.push("/chat");
       }
     }
@@ -172,7 +165,7 @@ export default function ChatLayout({
 
       {/* Main Content */}
       <Box flex="1" overflow="auto" h="100%" position="relative">
-        <Box padding={4} height="100%" overflowY="auto">
+        <Box padding={0} height="100%" overflowY="auto">
           {children}
         </Box>
       </Box>
