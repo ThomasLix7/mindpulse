@@ -21,8 +21,8 @@ interface MemoryRow {
     timestamp: number;
     type: string;
     isLongterm: boolean;
-    created_at?: string;
   };
+  created_at?: string;
 }
 
 // GET all conversations for a user
@@ -55,7 +55,37 @@ export async function GET(request: Request) {
 
     // If a specific conversation history is requested
     if (conversationId) {
-      return await getConversationHistory(conversationId, userId);
+      // First get the conversation metadata
+      const { data: conversation, error: convError } = await supabase
+        .from("conversations")
+        .select("*")
+        .eq("id", conversationId)
+        .eq("user_id", userId)
+        .single();
+
+      if (convError || !conversation) {
+        return NextResponse.json(
+          { error: "Conversation not found", success: false },
+          { status: 404 }
+        );
+      }
+
+      // Get the history
+      const historyResponse = await getConversationHistory(
+        conversationId,
+        userId
+      );
+      const historyData = await historyResponse.json();
+
+      // Return both the conversation and its history
+      return NextResponse.json({
+        conversation: {
+          ...conversation,
+          history: historyData.history || [],
+        },
+        success: true,
+        isNewConversation: historyData.isNewConversation || false,
+      });
     }
 
     // Get all conversations for the user
@@ -75,10 +105,17 @@ export async function GET(request: Request) {
     }
 
     // If includeHistory is true, fetch history for each conversation
+    // But ONLY if explicitly requested to avoid unnecessary database queries
     if (includeHistory && conversations) {
+      console.log(
+        `Fetching history for ${conversations.length} conversations (requested with includeHistory)`
+      );
       try {
+        // Limit the number of conversations we load history for to avoid overloading the database
+        const conversationsToFetch = conversations.slice(0, 5); // Only fetch history for the 5 most recent
+
         const conversationsWithHistory = await Promise.all(
-          conversations.map(async (conv) => {
+          conversationsToFetch.map(async (conv) => {
             const historyResponse = await getConversationHistory(
               conv.id,
               userId
@@ -92,8 +129,17 @@ export async function GET(request: Request) {
           })
         );
 
+        // For the remaining conversations, include them without history
+        const remainingConversations = conversations.slice(5).map((conv) => ({
+          ...conv,
+          history: [],
+        }));
+
         return NextResponse.json({
-          conversations: conversationsWithHistory,
+          conversations: [
+            ...conversationsWithHistory,
+            ...remainingConversations,
+          ],
           success: true,
         });
       } catch (error) {
@@ -102,6 +148,7 @@ export async function GET(request: Request) {
       }
     }
 
+    // Return conversations without history (more efficient)
     return NextResponse.json({
       conversations,
       success: true,
@@ -118,6 +165,11 @@ export async function GET(request: Request) {
 // Helper function to get conversation history
 async function getConversationHistory(conversationId: string, userId: string) {
   try {
+    // Log that we're fetching history
+    console.log(
+      `Fetching history for conversation ${conversationId} for user ${userId}`
+    );
+
     // Check that we have a conversationId
     if (!conversationId) {
       return NextResponse.json(
@@ -129,75 +181,118 @@ async function getConversationHistory(conversationId: string, userId: string) {
     // Initialize vector store
     const vectorStore = await getVectorStore();
     if (!vectorStore) {
+      console.error("Vector store initialization failed");
       return NextResponse.json(
         { error: "Vector store initialization failed" },
         { status: 500 }
       );
     }
 
+    // Log vector store type
+    console.log(`Vector store type: ${vectorStore.constructor.name}`);
+
     let resultRows: MemoryRow[] = [];
+    let history: any[] = [];
 
     // Check if we have a proper vector store or just a Supabase client
     if (vectorStore instanceof SupabaseVectorStore) {
       const supabaseClient = (vectorStore as any).client;
 
-      // Query conversation-based memories using the metadata field
-      const { data: conversationResultRows, error: conversationQueryError } =
+      // UPDATED QUERY: Try both methods to ensure we find the conversation
+      console.log("Querying ai_memories table for conversation history");
+
+      // Method 1: Use the dedicated conversation_id column
+      const { data: columnResultRows, error: columnQueryError } =
         await supabaseClient
           .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'conversationId'", "eq", conversationId)
-          .order("metadata->>'timestamp'", { ascending: true });
+          .select("content, metadata, created_at")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true });
 
-      if (conversationQueryError) {
+      if (columnQueryError) {
         console.error(
-          "Database query error for conversation memories:",
-          conversationQueryError
+          "Database query error using conversation_id column:",
+          columnQueryError
+        );
+      } else if (columnResultRows && columnResultRows.length > 0) {
+        console.log(
+          `Found ${columnResultRows.length} records using conversation_id column`
+        );
+        resultRows = columnResultRows;
+      } else {
+        console.log(
+          "No records found using conversation_id column, trying metadata"
+        );
+
+        // Method 2: Try the legacy metadata.conversationId approach as fallback
+        const { data: metadataResultRows, error: metadataQueryError } =
+          await supabaseClient
+            .from("ai_memories")
+            .select("content, metadata")
+            .filter("metadata->>'conversationId'", "eq", conversationId)
+            .order("metadata->>'timestamp'", { ascending: true });
+
+        if (metadataQueryError) {
+          console.error(
+            "Database query error using metadata.conversationId:",
+            metadataQueryError
+          );
+        } else if (metadataResultRows && metadataResultRows.length > 0) {
+          console.log(
+            `Found ${metadataResultRows.length} records using metadata.conversationId`
+          );
+          resultRows = metadataResultRows;
+        } else {
+          console.log("No records found with either method");
+        }
+      }
+
+      // DEBUG: Log the first result to see its structure
+      if (resultRows && resultRows.length > 0) {
+        console.log(
+          "First result row:",
+          JSON.stringify(resultRows[0], null, 2)
         );
       } else {
-        resultRows = conversationResultRows || [];
-      }
-    } else if (vectorStore && "from" in vectorStore) {
-      // Use Supabase client directly
-      console.log(
-        "⚠️ FALLBACK: Using direct Supabase queries for history retrieval (no embeddings)"
-      );
+        console.log("No results found for this conversation");
 
-      // Query conversation-based memories using the metadata field
-      const { data: conversationResultRows, error: queryError } =
-        await vectorStore
-          .from("ai_memories")
-          .select("content, metadata")
-          .filter("metadata->>'conversationId'", "eq", conversationId)
-          .order("metadata->>'timestamp'", { ascending: true });
-
-      resultRows = conversationResultRows || [];
-
-      if (queryError) {
-        console.error("Database query error:", queryError);
-        throw queryError;
+        // Return successfully with empty history for new conversations
+        // instead of potentially causing repeated fetch attempts
+        return NextResponse.json({
+          history: [],
+          success: true,
+          isNewConversation: true,
+        });
       }
     }
 
-    // Process the results to extract user and AI messages
-    const history = [];
-
+    // Process the history
     for (const row of resultRows) {
       try {
+        if (!row || !row.content) {
+          console.warn("Skipping invalid history row:", row);
+          continue;
+        }
+
         const content = row.content;
         // Each content should be in the format "USER: message\nAI: response"
         const parts = content.split("\nAI: ");
 
         if (parts.length !== 2) {
           // Skip malformed entries
+          console.warn(
+            `Skipping malformed content entry: ${content.substring(0, 50)}...`
+          );
           continue;
         }
 
         const userMessage = parts[0].replace("USER: ", "");
         const aiResponse = parts[1];
 
-        // Get timestamp from metadata
-        const timestamp = row.metadata.timestamp || Date.now();
+        // Get timestamp from metadata or created_at
+        const timestamp =
+          row.metadata?.timestamp ||
+          (row.created_at ? new Date(row.created_at).getTime() : Date.now());
 
         // Add to history array
         history.push({

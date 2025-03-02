@@ -1,0 +1,152 @@
+"use client";
+
+import { Box, Button, Text, Stack, Spinner } from "@chakra-ui/react";
+import { useRouter, usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
+
+interface ConversationSidebarProps {
+  conversations: any[];
+  isLoading: boolean;
+  userId?: string;
+  onDeleteConversation?: (id: string) => Promise<void>;
+}
+
+export default function ConversationSidebar({
+  conversations,
+  isLoading,
+  userId,
+  onDeleteConversation,
+}: ConversationSidebarProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const currentConversationId = pathname?.split("/").pop();
+
+  // Navigate to specific conversation
+  const navigateToConversation = (id: string) => {
+    // Don't navigate if we're already on this conversation
+    if (id === currentConversationId) {
+      console.log("Already on this conversation, not navigating");
+      return;
+    }
+
+    console.log(`Navigating to conversation: ${id}`);
+    router.push(`/chat/${id}`);
+  };
+
+  // Create new conversation - use /chat/new to delegate creation to Chat component
+  const createNewConversation = () => {
+    console.log("ConversationSidebar: Requesting new conversation");
+    router.push("/chat/new");
+  };
+
+  // Handle delete conversation
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevent triggering the parent click event
+    if (onDeleteConversation) {
+      onDeleteConversation(id);
+    }
+  };
+
+  return (
+    <Box
+      w="250px"
+      borderRight="1px solid"
+      borderColor="gray.700"
+      p={3}
+      overflowY="auto"
+      display={{ base: "none", md: "block" }}
+      bg="gray.900"
+      h="100%"
+    >
+      <Stack h="100%" gap={3}>
+        {/* Sidebar Header */}
+        <Text fontSize="sm" fontWeight="bold" color="gray.400" mb={2}>
+          CONVERSATIONS
+        </Text>
+
+        {/* Conversations List */}
+        {isLoading ? (
+          <Box textAlign="center" py={8}>
+            <Spinner size="sm" color="blue.400" />
+            <Text mt={2} fontSize="sm" color="gray.400">
+              Loading conversations...
+            </Text>
+          </Box>
+        ) : conversations.length === 0 ? (
+          <Box textAlign="center" py={8}>
+            <Text fontSize="sm" color="gray.400">
+              No conversations yet
+            </Text>
+          </Box>
+        ) : (
+          <Stack overflowY="auto" gap={1} flex="1">
+            {conversations.map((conv: any) => (
+              <Box
+                key={conv.id}
+                p={2}
+                cursor="pointer"
+                borderRadius="md"
+                bg={
+                  conv.id === currentConversationId ? "gray.800" : "transparent"
+                }
+                _hover={{
+                  bg:
+                    conv.id !== currentConversationId ? "gray.800" : "gray.700",
+                }}
+                onClick={() => navigateToConversation(conv.id)}
+              >
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center"
+                >
+                  <Text
+                    fontSize="sm"
+                    fontWeight={
+                      conv.id === currentConversationId ? "bold" : "normal"
+                    }
+                    color={
+                      conv.id === currentConversationId
+                        ? "blue.300"
+                        : "gray.300"
+                    }
+                    overflow="hidden"
+                    textOverflow="ellipsis"
+                    whiteSpace="nowrap"
+                    flex="1"
+                  >
+                    {conv.title || "New Conversation"}
+                  </Text>
+                  <Box
+                    as="span"
+                    fontSize="sm"
+                    ml={2}
+                    color="gray.500"
+                    _hover={{ color: "red.400" }}
+                    cursor="pointer"
+                    onClick={(e) => handleDelete(e, conv.id)}
+                  >
+                    ×
+                  </Box>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        )}
+
+        {/* New Conversation Button */}
+        <Button
+          colorScheme="blue"
+          size="sm"
+          leftIcon={<Box as="span">+</Box>}
+          onClick={createNewConversation}
+          mt="auto"
+          bg="blue.600"
+          _hover={{ bg: "blue.500" }}
+        >
+          New Conversation
+        </Button>
+      </Stack>
+    </Box>
+  );
+}
