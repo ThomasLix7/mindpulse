@@ -151,7 +151,17 @@ export default function ChatLayout({
   };
 
   return (
-    <Flex h="100vh" bg="black" color="white">
+    <Flex
+      position="fixed"
+      top="64px"
+      left="0"
+      right="0"
+      bottom="0"
+      bg="black"
+      color="white"
+      overflow="hidden"
+      className="chat-layout-container"
+    >
       {/* Persistent Sidebar */}
       <ConversationSidebar
         conversations={conversations}
@@ -161,12 +171,8 @@ export default function ChatLayout({
       />
 
       {/* Main Content */}
-      <Box flex="1" overflow="auto">
-        <Box padding={8}>
-          <Heading color="white">MindPulse AI Assistant</Heading>
-          <Text marginTop={4} marginBottom={8} color="gray.300">
-            Conversational AI with contextual memory
-          </Text>
+      <Box flex="1" overflow="auto" h="100%" position="relative">
+        <Box padding={4} height="100%" overflowY="auto">
           {children}
         </Box>
       </Box>

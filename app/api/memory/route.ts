@@ -567,7 +567,7 @@ export async function DELETE(request: Request) {
     // Check if memory exists and belongs to user
     const { data: memoryData, error: memoryError } = await supabaseServer
       .from("ai_memories")
-      .select("user_id, metadata")
+      .select("user_id, metadata, conversation_id")
       .eq("id", memoryId)
       .single();
 
@@ -595,7 +595,72 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Update memory to set is_longterm = false
+    console.log(`Processing forget/delete request for memory ID: ${memoryId}`);
+
+    // First check if this memory has a conversation_id
+    if (memoryData.conversation_id) {
+      console.log(`Memory has conversation_id: ${memoryData.conversation_id}`);
+
+      // Check if the associated conversation still exists
+      console.log(
+        `Checking if conversation ${memoryData.conversation_id} exists...`
+      );
+      const { data: conversationData, error: conversationError } =
+        await supabaseServer
+          .from("conversations")
+          .select("id")
+          .eq("id", memoryData.conversation_id)
+          .single();
+
+      // If conversation fetch had an error or returned no data, it doesn't exist
+      if (conversationError) {
+        console.log(`Error finding conversation: ${conversationError.message}`);
+      }
+
+      if (!conversationData) {
+        console.log(
+          `Conversation ${memoryData.conversation_id} NOT FOUND - will delete memory completely`
+        );
+
+        // Delete the memory record completely
+        const { error: deleteError } = await supabaseServer
+          .from("ai_memories")
+          .delete()
+          .eq("id", memoryId);
+
+        if (deleteError) {
+          console.error(`Error deleting memory: ${deleteError.message}`);
+          return NextResponse.json(
+            {
+              error: "Failed to delete memory",
+              success: false,
+              details: deleteError.message,
+            },
+            { status: 500 }
+          );
+        }
+
+        console.log(`Successfully deleted memory ${memoryId} completely`);
+        return NextResponse.json({
+          success: true,
+          message:
+            "Memory has been deleted completely as the associated conversation no longer exists",
+        });
+      } else {
+        console.log(
+          `Conversation ${memoryData.conversation_id} still exists - will just update isLongterm flag`
+        );
+      }
+    } else {
+      console.log(`Memory ${memoryId} has no conversation_id`);
+    }
+
+    // If we reach here, either:
+    // 1. The conversation still exists, or
+    // 2. There is no conversation_id to check
+    // So we'll update the is_longterm flag as before
+    console.log(`Updating memory ${memoryId} to set is_longterm=false`);
+
     const updatedMetadata = {
       ...memoryData.metadata,
       isLongterm: false,
@@ -610,7 +675,7 @@ export async function DELETE(request: Request) {
       .eq("id", memoryId);
 
     if (updateError) {
-      console.error("Error forgetting memory:", updateError);
+      console.error(`Error updating memory: ${updateError.message}`);
       return NextResponse.json(
         {
           error: "Failed to forget memory",
@@ -621,6 +686,7 @@ export async function DELETE(request: Request) {
       );
     }
 
+    console.log(`Successfully updated memory ${memoryId} to is_longterm=false`);
     return NextResponse.json({
       success: true,
       message: "Memory has been forgotten (isLongterm set to false)",

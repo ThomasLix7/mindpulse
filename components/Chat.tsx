@@ -14,6 +14,7 @@ import {
   Heading,
   Separator,
   Flex,
+  Spinner,
 } from "@chakra-ui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -68,88 +69,163 @@ export default function Chat({
     );
   };
 
+  // Add ref for auto-scrolling
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
   // Initialize or retrieve user information and conversations
   useEffect(() => {
     const checkAuth = async () => {
-      const { user, error } = await getCurrentUser();
-      setUser(user);
-      setAuthChecked(true);
+      try {
+        const { user, error } = await getCurrentUser();
+        setUser(user);
+        setAuthChecked(true);
 
-      // Load saved conversations from localStorage (for anonymous users)
-      // or from server (for logged-in users)
-      console.log(
-        "Loading conversations with conversationId from URL:",
-        conversationId
-      );
-
-      // Special case for "new" - we'll handle this in the conversationId effect
-      if (conversationId === "new") {
+        // Load saved conversations from localStorage (for anonymous users)
+        // or from server (for logged-in users)
         console.log(
-          "Chat component: This is a new conversation request, handled in conversationId effect"
+          "Loading conversations with conversationId from URL:",
+          conversationId
         );
-        setHistoryLoading(false);
-        return;
-      }
 
-      // If we have a specific conversationId, only load that conversation
-      // This prevents loading all conversations unnecessarily
-      if (conversationId && user?.id) {
-        console.log(
-          `Loading only conversation ${conversationId} for authenticated user`
-        );
-        await loadSpecificConversation(conversationId, user.id);
+        // Special case for "new" - we'll handle this in the conversationId effect
+        if (conversationId === "new") {
+          console.log(
+            "Chat component: This is a new conversation request, handled in conversationId effect"
+          );
+          setHistoryLoading(false);
+          return;
+        }
+
+        // If we have a specific conversationId, only load that conversation
+        // This prevents loading all conversations unnecessarily
+        if (conversationId && user?.id) {
+          console.log(
+            `Loading only conversation ${conversationId} for authenticated user`
+          );
+          await loadSpecificConversation(conversationId, user.id);
+          setHistoryLoading(false);
+        } else {
+          // Load all conversations only if we're on the main chat page or for anonymous users
+          await loadConversations(user?.id);
+        }
+      } catch (error) {
+        console.error("Error initializing chat component:", error);
+        setAuthChecked(true);
         setHistoryLoading(false);
-      } else {
-        // Load all conversations only if we're on the main chat page or for anonymous users
-        await loadConversations(user?.id);
       }
     };
 
     checkAuth();
   }, []); // Keep the original empty dependency array
 
-  // When conversationId prop changes, update the active conversation and load it
+  // Update the useEffect that watches for conversationId changes
   useEffect(() => {
-    if (!conversationId) return;
+    if (!user?.id) return;
 
-    console.log(
-      "Chat component: URL conversationId changed to:",
-      conversationId
-    );
+    console.log(`Chat: conversationId changed to ${conversationId}`);
 
-    // Special handling for "new" conversation ID
+    // Clear loading state first
+    setHistoryLoading(true);
+
     if (conversationId === "new") {
-      console.log("This is a request for a new conversation, creating now");
-      // Only create a new conversation once we've checked auth
-      if (authChecked) {
-        console.log("Auth is checked, creating new conversation");
-        createNewConversation();
-      }
+      // Create a new conversation
+      console.log("Chat: Creating new conversation");
+      createNewConversation();
       return;
     }
 
-    // For existing conversations
-    if (conversationId !== activeConversationId) {
-      // Set this as active immediately for better UX
+    if (conversationId && conversationId !== "new") {
+      // Set this as the active conversation immediately for better UX
       setActiveConversationId(conversationId);
 
-      // Clear any previous tracking for this conversation to force a fresh check
+      // Reset any state from previous conversation
       sessionStorage.removeItem(`checked-empty-${conversationId}`);
 
-      // If user has been determined and we're not already loading
-      if (authChecked && !historyLoading) {
-        console.log(`Chat component: Loading conversation ${conversationId}`);
-        // Load this specific conversation with all its memories
-        loadSpecificConversation(conversationId, user?.id);
-      }
+      // Load the specific conversation
+      console.log(`Chat: Loading specific conversation ${conversationId}`);
+      loadSpecificConversation(conversationId, user?.id)
+        .then((loadedConversation) => {
+          console.log("Chat: Loaded conversation data:", loadedConversation);
+          console.log(
+            "Chat: History length:",
+            loadedConversation?.history?.length || 0
+          );
+
+          // If we loaded a conversation but it has no history, try loading it again
+          // This helps in cases where the conversation metadata exists but history wasn't properly loaded
+          if (
+            loadedConversation &&
+            (!loadedConversation.history ||
+              loadedConversation.history.length === 0)
+          ) {
+            console.log(
+              "Chat: Conversation has no history, attempting to force reload"
+            );
+            // Try fetching it directly from the server
+            if (user?.id) {
+              const endpoint = `/api/conversations?userId=${encodeURIComponent(
+                user.id
+              )}&conversationId=${encodeURIComponent(conversationId)}`;
+              console.log(
+                `Chat: Attempting direct server fetch from ${endpoint}`
+              );
+              fetch(endpoint)
+                .then((response) => {
+                  if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}`);
+                  }
+                  return response.json();
+                })
+                .then((data) => {
+                  console.log("Chat: Direct server fetch result:", data);
+                  if (data.conversation && data.conversation.history) {
+                    // Convert the server history format to client format
+                    const formattedHistory = data.conversation.history.map(
+                      (item: any) => ({
+                        user: item.userMessage,
+                        ai: item.aiResponse,
+                      })
+                    );
+
+                    // Update the conversation with the fetched history
+                    const updatedConversation = {
+                      ...loadedConversation,
+                      history: formattedHistory, // Use the converted history format
+                    };
+                    setConversations((prevConversations) => {
+                      const updatedConversations = [...prevConversations];
+                      const index = updatedConversations.findIndex(
+                        (c) => c.id === conversationId
+                      );
+                      if (index !== -1) {
+                        updatedConversations[index] = updatedConversation;
+                      }
+                      return updatedConversations;
+                    });
+                    console.log(
+                      "Chat: Updated conversation with fetched history"
+                    );
+                  }
+                })
+                .catch((error) => {
+                  console.error("Chat: Error in direct server fetch:", error);
+                })
+                .finally(() => {
+                  setHistoryLoading(false);
+                });
+            } else {
+              setHistoryLoading(false);
+            }
+          } else {
+            setHistoryLoading(false);
+          }
+        })
+        .catch((error) => {
+          console.error("Chat: Error loading conversation:", error);
+          setHistoryLoading(false);
+        });
     }
-  }, [
-    conversationId,
-    activeConversationId,
-    authChecked,
-    historyLoading,
-    user?.id,
-  ]);
+  }, [conversationId, user?.id]);
 
   // Load conversations from localStorage or server
   const loadConversations = async (userId?: string) => {
@@ -588,8 +664,14 @@ export default function Chat({
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`API responded with status: ${res.status}`);
+      }
+
       const reader = res.body?.getReader();
-      if (!reader) return;
+      if (!reader) {
+        throw new Error("Response body reader could not be created");
+      }
 
       const decoder = new TextDecoder();
       let aiResponse = "";
@@ -629,15 +711,62 @@ export default function Chat({
         }
       }
 
-      // After successful completion, if this is the first message, update the conversation title
-      const activeConversation = getActiveConversation();
-      if (activeConversation.history.length === 1) {
-        const newTitle =
-          userMessage.substring(0, 30) + (userMessage.length > 30 ? "..." : "");
-        await renameConversation(conversationId, newTitle);
+      console.log(
+        "Stream completed, final response length:",
+        aiResponse.length
+      );
+
+      // Ensure the final response is properly stored in the conversation history
+      if (aiResponse) {
+        // Final update to make sure the complete response is saved
+        setConversations((prev) =>
+          prev.map((conv) => {
+            if (conv.id === conversationId && conv.history.length > 0) {
+              const updatedHistory = [...conv.history];
+              const lastIndex = updatedHistory.length - 1;
+
+              updatedHistory[lastIndex] = {
+                user: updatedHistory[lastIndex].user,
+                ai: aiResponse,
+              };
+
+              return { ...conv, history: updatedHistory };
+            }
+            return conv;
+          })
+        );
+
+        // After successful completion, if this is the first message, update the conversation title
+        const activeConversation = getActiveConversation();
+        if (activeConversation.history.length === 1) {
+          const newTitle =
+            userMessage.substring(0, 30) +
+            (userMessage.length > 30 ? "..." : "");
+          await renameConversation(conversationId, newTitle);
+        }
+      } else {
+        console.error("No AI response received after stream completed");
       }
     } catch (e) {
-      console.error("Stream error:", e);
+      console.error("Chat API or stream error:", e);
+
+      // Show an error message in the UI by updating the current conversation
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id === conversationId && conv.history.length > 0) {
+            const updatedHistory = [...conv.history];
+            const lastIndex = updatedHistory.length - 1;
+
+            updatedHistory[lastIndex] = {
+              user: updatedHistory[lastIndex].user,
+              ai: "Sorry, there was an error processing your request. Please try again.",
+            };
+
+            return { ...conv, history: updatedHistory };
+          }
+          return conv;
+        })
+      );
     } finally {
       setLoading(false);
     }
@@ -850,202 +979,225 @@ export default function Chat({
     }
   }, [historyLoading, authChecked, activeConversationId, user?.id]);
 
-  // Get the current conversation
-  const activeConversation = getActiveConversation();
-
   // Load a specific conversation by ID
   const loadSpecificConversation = async (
     conversationId: string,
     userId?: string
   ) => {
-    console.log(`Loading specific conversation with ID: ${conversationId}`);
+    console.log(
+      `loadSpecificConversation: Starting to load conversation ${conversationId}`
+    );
 
-    // Special case for "new" - redirect to the new conversation page
-    if (conversationId === "new") {
+    // Don't load if we already checked this conversation was empty (prevents infinite loops)
+    const checkedEmpty = sessionStorage.getItem(
+      `checked-empty-${conversationId}`
+    );
+    if (checkedEmpty) {
       console.log(
-        "This is a request for a new conversation already being handled by the useEffect"
+        `Already checked that conversation ${conversationId} is empty, skipping load`
       );
-      return;
+      setHistoryLoading(false);
+      return null;
     }
 
-    // Don't re-fetch if we're already loading
-    if (historyLoading) {
-      console.log(
-        "Already loading conversation data, skipping duplicate fetch"
-      );
-      return;
-    }
-
-    // Check if we've already attempted to load this conversation recently
-    // This is critical to prevent infinite API calls for empty conversations
-    const checkedEmptyKey = `checked-empty-${conversationId}`;
-    if (sessionStorage.getItem(checkedEmptyKey)) {
-      console.log(
-        `Conversation ${conversationId} already checked and confirmed empty, not fetching again`
-      );
-      return;
-    }
-
-    // Set loading state when starting to load a specific conversation
+    // Set loading state
     setHistoryLoading(true);
 
-    // For anonymous users, try to find in localStorage
-    if (!userId) {
-      const storedConversations = localStorage.getItem(
-        "mindpulse-conversations"
+    try {
+      // First check if we already have this conversation in memory
+      console.log(
+        "loadSpecificConversation: Checking memory conversations first"
       );
-      if (storedConversations) {
-        try {
-          const parsedConversations = JSON.parse(storedConversations);
-          const specificConversation = parsedConversations.find(
-            (c: Conversation) => c.id === conversationId
-          );
+      const existingConversation = conversations.find(
+        (c) => c.id === conversationId
+      );
 
-          if (specificConversation) {
-            console.log(
-              "Found conversation in localStorage:",
-              specificConversation
+      if (existingConversation) {
+        console.log(
+          "loadSpecificConversation: Found in memory:",
+          existingConversation
+        );
+        console.log(
+          "loadSpecificConversation: History length:",
+          existingConversation.history?.length || 0
+        );
+
+        // If conversation exists but has no history, check if we need to load from server
+        if (
+          (!existingConversation.history ||
+            existingConversation.history.length === 0) &&
+          user?.id
+        ) {
+          console.log(
+            "loadSpecificConversation: Memory conversation has no history, checking server"
+          );
+        } else {
+          // We have a valid memory conversation with history, use it
+          setHistoryLoading(false);
+          return existingConversation;
+        }
+      }
+
+      // Check localStorage for anonymous users
+      if (!user?.id) {
+        console.log(
+          "loadSpecificConversation: Anonymous user, checking localStorage"
+        );
+        try {
+          const storedConversationsString =
+            localStorage.getItem("conversations");
+          if (storedConversationsString) {
+            const storedConversations = JSON.parse(storedConversationsString);
+            const storedConvo = storedConversations.find(
+              (c: any) => c.id === conversationId
             );
 
-            // Add this conversation to our loaded conversations if not already there
-            setConversations((prev) => {
-              // Check if already in the list
-              if (prev.some((c) => c.id === conversationId)) {
-                return prev;
-              }
-              return [specificConversation, ...prev];
+            if (storedConvo) {
+              console.log(
+                "loadSpecificConversation: Found in localStorage:",
+                storedConvo
+              );
+              console.log(
+                "loadSpecificConversation: History length:",
+                storedConvo.history?.length || 0
+              );
+
+              // Ensure it has a history array even if empty
+              storedConvo.history = storedConvo.history || [];
+
+              // Add to memory
+              setConversations((prevConvos) => {
+                // Avoid duplicates
+                const filtered = prevConvos.filter(
+                  (c) => c.id !== conversationId
+                );
+                return [...filtered, storedConvo];
+              });
+
+              setHistoryLoading(false);
+              return storedConvo;
+            } else {
+              console.log(
+                `Conversation ${conversationId} not found in localStorage`
+              );
+            }
+          } else {
+            console.log("No conversations found in localStorage");
+          }
+        } catch (error) {
+          console.error("Error reading from localStorage:", error);
+        }
+
+        setHistoryLoading(false);
+        return null;
+      }
+
+      // For authenticated users, fetch from server
+      if (user?.id) {
+        console.log(
+          `loadSpecificConversation: Fetching from server for user ${user.id} and conversation ${conversationId}`
+        );
+        try {
+          const response = await fetch(
+            `/api/conversations?userId=${encodeURIComponent(
+              user.id
+            )}&conversationId=${encodeURIComponent(conversationId)}`
+          );
+
+          if (!response.ok) {
+            console.error(
+              `Server returned ${response.status} when fetching conversation:`,
+              await response.text()
+            );
+            throw new Error(`Server returned ${response.status}`);
+          }
+
+          const data = await response.json();
+          console.log("loadSpecificConversation: Server response:", data);
+
+          if (data.conversation) {
+            // Ensure history is always an array
+            data.conversation.history = data.conversation.history || [];
+            console.log(
+              "loadSpecificConversation: History from server length:",
+              data.conversation.history.length
+            );
+
+            // IMPORTANT: Convert the server history format (userMessage/aiResponse) to client format (user/ai)
+            const formattedHistory = data.conversation.history.map(
+              (item: any) => ({
+                user: item.userMessage,
+                ai: item.aiResponse,
+              })
+            );
+
+            const formattedConversation = {
+              id: data.conversation.id,
+              title: data.conversation.title || "New Conversation",
+              created_at: data.conversation.created_at,
+              updated_at: data.conversation.updated_at,
+              history: formattedHistory, // Use the converted history format
+            };
+
+            console.log(
+              "loadSpecificConversation: Formatted conversation:",
+              formattedConversation
+            );
+
+            // Update conversations in memory
+            setConversations((prevConvos) => {
+              // Avoid duplicates
+              const filtered = prevConvos.filter(
+                (c) => c.id !== conversationId
+              );
+              return [...filtered, formattedConversation];
             });
 
-            setActiveConversationId(conversationId);
             setHistoryLoading(false);
-            return;
+
+            // Mark as empty if needed for future reference
+            if (
+              !formattedConversation.history ||
+              formattedConversation.history.length === 0
+            ) {
+              console.log(
+                `Marking conversation ${conversationId} as checked-empty`
+              );
+              sessionStorage.setItem(`checked-empty-${conversationId}`, "true");
+            }
+
+            return formattedConversation;
+          } else {
+            console.log("No conversation returned from server");
+            sessionStorage.setItem(`checked-empty-${conversationId}`, "true");
           }
-        } catch (e) {
-          console.error("Error parsing stored conversations:", e);
+        } catch (error) {
+          console.error("Error fetching conversation from server:", error);
         }
       }
 
-      console.warn(`Conversation ${conversationId} not found in localStorage`);
+      console.log(`No conversation found for ID: ${conversationId}`);
       setHistoryLoading(false);
-      return;
-    }
-
-    // For authenticated users, directly fetch from server
-    try {
-      console.log(
-        `Fetching conversation ${conversationId} from server for user ${userId}`
-      );
-
-      const response = await fetch(
-        `/api/conversations?userId=${userId}&conversationId=${conversationId}`,
-        {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Received API response:", data);
-
-        if (data.success && data.conversation) {
-          console.log("Server returned conversation:", data.conversation);
-
-          // Format the conversation for client use
-          const clientConversation = {
-            id: data.conversation.id,
-            title: data.conversation.title || "New Conversation",
-            history: Array.isArray(data.conversation.history)
-              ? data.conversation.history.map((item: any) => ({
-                  user: item.userMessage,
-                  ai: item.aiResponse,
-                }))
-              : [], // Ensure history is always an array
-          };
-
-          // Update our conversations list
-          setConversations((prev) => {
-            // Remove this conversation if it exists
-            const filtered = prev.filter((c) => c.id !== conversationId);
-            // Add the updated version at the beginning
-            return [clientConversation, ...filtered];
-          });
-
-          setActiveConversationId(conversationId);
-
-          // Log if it's an empty conversation
-          if (
-            !clientConversation.history ||
-            clientConversation.history.length === 0
-          ) {
-            console.log("Server returned an empty conversation (no history)");
-            // Mark as checked but empty to prevent future fetches
-            sessionStorage.setItem(checkedEmptyKey, "true");
-          }
-        } else {
-          console.log("Server returned no conversation data");
-
-          // Create an empty conversation object to display in UI
-          const emptyConversation = {
-            id: conversationId,
-            title: "New Conversation",
-            history: [],
-          };
-
-          // Update conversations list with this empty placeholder
-          setConversations((prev) => {
-            // Remove if exists
-            const filtered = prev.filter((c) => c.id !== conversationId);
-            // Add empty placeholder
-            return [emptyConversation, ...filtered];
-          });
-
-          setActiveConversationId(conversationId);
-
-          // Mark this as a checked empty conversation
-          sessionStorage.setItem(checkedEmptyKey, "true");
-        }
-      } else {
-        console.error(`Server returned status: ${response.status}`);
-
-        if (response.status === 404) {
-          alert(`Conversation not found. It may have been deleted.`);
-          router.push("/chat");
-        } else {
-          alert(`Error loading conversation. Status: ${response.status}`);
-        }
-
-        // Mark as checked to prevent repeated API calls
-        sessionStorage.setItem(checkedEmptyKey, "true");
-      }
+      sessionStorage.setItem(`checked-empty-${conversationId}`, "true");
+      return null;
     } catch (error) {
-      console.error("Error fetching specific conversation:", error);
-
-      // Try to extract more detailed error information
-      let errorMessage = "Unknown error";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      } else if (error && typeof error === "object") {
-        errorMessage = JSON.stringify(error);
-      }
-
-      // Log detailed error info
-      console.error(`Error details: ${errorMessage}`);
-
-      // Show user-friendly error message
-      alert(`Failed to load conversation: ${errorMessage}`);
-
-      // Mark as checked to prevent repeated API calls
-      sessionStorage.setItem(checkedEmptyKey, "true");
-    } finally {
+      console.error("Error in loadSpecificConversation:", error);
       setHistoryLoading(false);
+      return null;
     }
   };
 
+  // Add effect to scroll to bottom when messages change
+  useEffect(() => {
+    const activeConvo = getActiveConversation();
+    if (chatContainerRef.current && activeConvo.history?.length > 0) {
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
+    }
+  }, [conversations, activeConversationId]);
+
   return (
-    <Flex h="100vh" flexDirection="column" bg="black" color="white">
+    <Flex h="100%" flexDirection="column" bg="black" color="white">
       {/* Top Bar with Conversation Title and Controls */}
       <Box
         w="100%"
@@ -1059,7 +1211,7 @@ export default function Chat({
       >
         {/* Current Conversation Title */}
         <Heading size="md" fontWeight="medium" color="white">
-          {activeConversation.title || "New Conversation"}
+          {getActiveConversation().title || "New Conversation"}
         </Heading>
 
         {/* Authentication/Login Controls */}
@@ -1135,8 +1287,8 @@ export default function Chat({
             colorScheme="red"
             onClick={clearConversation}
             isDisabled={
-              !activeConversation.history ||
-              activeConversation.history.length === 0
+              !getActiveConversation().history ||
+              getActiveConversation().history.length === 0
             }
             borderColor="red.700"
             color="red.300"
@@ -1147,230 +1299,143 @@ export default function Chat({
         </Box>
 
         {/* Chat History */}
-        <Box flex="1" overflowY="auto" mb={4}>
+        <Box flex="1" overflowY="auto" mb={4} ref={chatContainerRef}>
           {historyLoading ? (
-            <Box textAlign="center" my={8}>
-              <Text color="gray.300">Loading conversations...</Text>
-            </Box>
-          ) : activeConversation.history.length === 0 ? (
-            <Box textAlign="center" my={8}>
-              <Heading size="md" mb={4} color="gray.300">
-                Start a new conversation
-              </Heading>
-              <Text color="gray.400">
-                Type a message below to begin chatting
+            <Box textAlign="center" py={6}>
+              <Spinner size="sm" color="blue.400" mb={2} />
+              <Text fontSize="sm" color="gray.400">
+                Loading conversation...
               </Text>
             </Box>
           ) : (
-            <Stack direction="column" gap={4}>
-              {activeConversation.history.map((entry, i) => (
-                <Box key={i} w="100%">
-                  <Text fontWeight="bold" color="purple.300">
-                    You: {entry.user}
-                  </Text>
-                  <Box
-                    display="flex"
-                    justifyContent="space-between"
-                    alignItems="flex-start"
-                    mt={2}
-                    mb={2}
-                  >
-                    <Box flex="1">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          div: ({ node, children }) => (
-                            <Box p={4} bg="gray.900" borderRadius="md" mb={4}>
-                              {children}
-                            </Box>
-                          ),
-                          p({ children }) {
-                            return (
-                              <Text
-                                mb={4}
-                                fontSize="md"
-                                lineHeight="tall"
-                                color="gray.200"
-                              >
-                                {children}
-                              </Text>
-                            );
-                          },
-                          h1({ children }) {
-                            return (
-                              <Heading
-                                as="h1"
-                                size="xl"
-                                mt={6}
-                                mb={4}
-                                color="white"
-                              >
-                                {children}
-                              </Heading>
-                            );
-                          },
-                          h2({ children }) {
-                            return (
-                              <Heading
-                                as="h2"
-                                size="lg"
-                                mt={5}
-                                mb={3}
-                                color="white"
-                              >
-                                {children}
-                              </Heading>
-                            );
-                          },
-                          h3({ children }) {
-                            return (
-                              <Heading
-                                as="h3"
-                                size="md"
-                                mt={4}
-                                mb={2}
-                                color="white"
-                              >
-                                {children}
-                              </Heading>
-                            );
-                          },
-                          code({ node, className, children, ...props }) {
-                            const match = /language-(\w+)/.exec(
-                              className || ""
-                            );
-                            const language = match ? match[1] : "typescript";
-                            const codeContent = String(children).replace(
-                              /\n$/,
-                              ""
-                            );
+            <>
+              {/* Display the active conversation history */}
+              {activeConversationId &&
+                (() => {
+                  // Find the active conversation
+                  const activeConvo = conversations.find(
+                    (c) => c.id === activeConversationId
+                  );
+                  console.log("Active conversation:", activeConvo);
+                  console.log(
+                    "History length:",
+                    activeConvo?.history?.length || 0
+                  );
 
-                            return match ? (
-                              <SyntaxHighlighter
-                                language={language}
-                                style={vscDarkPlus}
-                                customStyle={{
-                                  margin: "8px 0",
-                                  borderRadius: "6px",
-                                  fontSize: "14px",
-                                  padding: "16px",
-                                }}
-                              >
-                                {codeContent}
-                              </SyntaxHighlighter>
-                            ) : (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            );
-                          },
-                          ul({ children }) {
-                            return (
-                              <List.Root as="ul" ml={6} mb={4}>
-                                {children}
-                              </List.Root>
-                            );
-                          },
-                          ol({ children }) {
-                            return (
-                              <List.Root as="ol" ml={6} mb={4}>
-                                {children}
-                              </List.Root>
-                            );
-                          },
-                          li({ children }) {
-                            return <List.Item ml={4}>{children}</List.Item>;
-                          },
-                          blockquote({ children }) {
-                            return (
-                              <Box
-                                borderLeft="4px"
-                                borderColor="blue.500"
-                                pl={4}
-                                my={4}
-                                fontStyle="italic"
-                                color="blue.300"
-                                bg="gray.800"
-                                borderRadius="md"
-                                p={2}
-                              >
-                                {children}
+                  // Add detailed history debugging
+                  if (
+                    activeConvo &&
+                    activeConvo.history &&
+                    activeConvo.history.length > 0
+                  ) {
+                    console.log("First history item:", activeConvo.history[0]);
+                    console.log(
+                      "History keys:",
+                      Object.keys(activeConvo.history[0])
+                    );
+                  }
+
+                  if (
+                    !activeConvo ||
+                    !activeConvo.history ||
+                    activeConvo.history.length === 0
+                  ) {
+                    return (
+                      <Box textAlign="center" py={6}>
+                        <Text fontSize="sm" color="gray.400">
+                          Start a new conversation below
+                        </Text>
+                      </Box>
+                    );
+                  }
+
+                  return (
+                    <Box>
+                      {activeConvo.history.map((msg, idx) => {
+                        console.log(`Rendering message ${idx}:`, msg);
+
+                        // Check for alternative property names that might exist
+                        const hasUserMessage = "userMessage" in msg;
+                        const hasAiResponse = "aiResponse" in msg;
+
+                        // Use either the expected property names or alternatives
+                        const userText: string =
+                          msg.user ||
+                          (hasUserMessage ? (msg as any).userMessage : "");
+                        const aiText: string =
+                          msg.ai ||
+                          (hasAiResponse ? (msg as any).aiResponse : "");
+
+                        return (
+                          <Box
+                            key={idx}
+                            mb={4}
+                            p={3}
+                            borderRadius="md"
+                            backgroundColor={userText ? "gray.800" : "gray.900"}
+                          >
+                            <Box
+                              display="flex"
+                              justifyContent="space-between"
+                              alignItems="flex-start"
+                            >
+                              <Box flex="1">
+                                {userText && (
+                                  <Text
+                                    fontWeight="bold"
+                                    color="blue.300"
+                                    mb={1}
+                                  >
+                                    You:
+                                  </Text>
+                                )}
+                                {userText && <Text>{userText}</Text>}
+
+                                {aiText && (
+                                  <Text
+                                    fontWeight="bold"
+                                    color="green.300"
+                                    mt={userText ? 3 : 0}
+                                    mb={1}
+                                  >
+                                    AI:
+                                  </Text>
+                                )}
+                                {aiText && (
+                                  <Box mt={2}>
+                                    <Text whiteSpace="pre-wrap">{aiText}</Text>
+                                  </Box>
+                                )}
                               </Box>
-                            );
-                          },
-                          a({ href, children }) {
-                            return (
-                              <Link
-                                href={href}
-                                color="blue.300"
-                                _hover={{ textDecoration: "underline" }}
-                              >
-                                {children}
-                              </Link>
-                            );
-                          },
-                          table({ children }) {
-                            return (
-                              <Box overflowX="auto" my={6}>
-                                <Table.Root variant="line" size="sm">
-                                  {children}
-                                </Table.Root>
-                              </Box>
-                            );
-                          },
-                          th({ children }) {
-                            return (
-                              <Box
-                                as="th"
-                                bg="whiteAlpha.100"
-                                p={2}
-                                borderBottomWidth="1px"
-                                color="gray.100"
-                                borderColor="gray.200"
-                              >
-                                {children}
-                              </Box>
-                            );
-                          },
-                          td({ children }) {
-                            return (
-                              <Box
-                                as="td"
-                                p={2}
-                                borderBottomWidth="1px"
-                                borderColor="gray.100"
-                              >
-                                {children}
-                              </Box>
-                            );
-                          },
-                          hr() {
-                            return <Separator my={6} borderColor="gray.200" />;
-                          },
-                        }}
-                      >
-                        {entry.ai}
-                      </ReactMarkdown>
+
+                              {/* Add Save to Memory button for authenticated users */}
+                              {user && (
+                                <Button
+                                  size="xs"
+                                  ml={2}
+                                  colorScheme="purple"
+                                  isLoading={savingToLongTerm === idx}
+                                  onClick={() =>
+                                    saveToLongTermMemory(
+                                      activeConversationId,
+                                      idx
+                                    )
+                                  }
+                                  bg="purple.600"
+                                  _hover={{ bg: "purple.500" }}
+                                  title="Save this exchange to your long-term memory for AI to reference in future conversations"
+                                >
+                                  Save to Memory
+                                </Button>
+                              )}
+                            </Box>
+                          </Box>
+                        );
+                      })}
                     </Box>
-                    {user && (
-                      <Button
-                        size="xs"
-                        ml={2}
-                        colorScheme="purple"
-                        isLoading={savingToLongTerm === i}
-                        onClick={() =>
-                          saveToLongTermMemory(activeConversationId, i)
-                        }
-                        bg="purple.600"
-                        _hover={{ bg: "purple.500" }}
-                      >
-                        Save to Memory
-                      </Button>
-                    )}
-                  </Box>
-                </Box>
-              ))}
-            </Stack>
+                  );
+                })()}
+            </>
           )}
         </Box>
 

@@ -53,12 +53,13 @@ export default function ConversationSidebar({
       borderRight="1px solid"
       borderColor="gray.700"
       p={3}
-      overflowY="auto"
       display={{ base: "none", md: "block" }}
       bg="gray.900"
       h="100%"
+      overflow="hidden"
+      position="relative"
     >
-      <Stack h="100%" gap={3}>
+      <Stack h="100%" gap={3} display="flex" flexDirection="column">
         {/* Sidebar Header */}
         <Text fontSize="sm" fontWeight="bold" color="gray.400" mb={2}>
           CONVERSATIONS
@@ -79,59 +80,65 @@ export default function ConversationSidebar({
             </Text>
           </Box>
         ) : (
-          <Stack overflowY="auto" gap={1} flex="1">
-            {conversations.map((conv: any) => (
-              <Box
-                key={conv.id}
-                p={2}
-                cursor="pointer"
-                borderRadius="md"
-                bg={
-                  conv.id === currentConversationId ? "gray.800" : "transparent"
-                }
-                _hover={{
-                  bg:
-                    conv.id !== currentConversationId ? "gray.800" : "gray.700",
-                }}
-                onClick={() => navigateToConversation(conv.id)}
-              >
+          <Box overflowY="auto" flex="1">
+            <Stack gap={1}>
+              {conversations.map((conv: any) => (
                 <Box
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center"
+                  key={conv.id}
+                  p={2}
+                  cursor="pointer"
+                  borderRadius="md"
+                  bg={
+                    conv.id === currentConversationId
+                      ? "gray.800"
+                      : "transparent"
+                  }
+                  _hover={{
+                    bg:
+                      conv.id !== currentConversationId
+                        ? "gray.800"
+                        : "gray.700",
+                  }}
+                  onClick={() => navigateToConversation(conv.id)}
                 >
-                  <Text
-                    fontSize="sm"
-                    fontWeight={
-                      conv.id === currentConversationId ? "bold" : "normal"
-                    }
-                    color={
-                      conv.id === currentConversationId
-                        ? "blue.300"
-                        : "gray.300"
-                    }
-                    overflow="hidden"
-                    textOverflow="ellipsis"
-                    whiteSpace="nowrap"
-                    flex="1"
-                  >
-                    {conv.title || "New Conversation"}
-                  </Text>
                   <Box
-                    as="span"
-                    fontSize="sm"
-                    ml={2}
-                    color="gray.500"
-                    _hover={{ color: "red.400" }}
-                    cursor="pointer"
-                    onClick={(e) => handleDelete(e, conv.id)}
+                    display="flex"
+                    justifyContent="space-between"
+                    alignItems="center"
                   >
-                    ×
+                    <Text
+                      fontSize="sm"
+                      fontWeight={
+                        conv.id === currentConversationId ? "bold" : "normal"
+                      }
+                      color={
+                        conv.id === currentConversationId
+                          ? "blue.300"
+                          : "gray.300"
+                      }
+                      overflow="hidden"
+                      textOverflow="ellipsis"
+                      whiteSpace="nowrap"
+                      flex="1"
+                    >
+                      {conv.title || "New Conversation"}
+                    </Text>
+                    <Box
+                      as="span"
+                      fontSize="sm"
+                      ml={2}
+                      color="gray.500"
+                      _hover={{ color: "red.400" }}
+                      cursor="pointer"
+                      onClick={(e) => handleDelete(e, conv.id)}
+                    >
+                      ×
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            ))}
-          </Stack>
+              ))}
+            </Stack>
+          </Box>
         )}
 
         {/* New Conversation Button */}

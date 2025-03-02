@@ -103,49 +103,51 @@ export default function ChatDefaultPage() {
   };
 
   return (
-    <Box padding={6}>
-      <Heading size="lg" mb={6} color="white">
-        All Conversations
-      </Heading>
+    <Box h="100%" p={4} className="chat-page-container">
+      <VStack gap={6} align="center" justify="center" h="100%">
+        <Heading size="lg" mb={6} color="white">
+          All Conversations
+        </Heading>
 
-      <Button
-        colorScheme="blue"
-        mb={6}
-        onClick={createNewConversation}
-        bg="blue.600"
-        _hover={{ bg: "blue.500" }}
-      >
-        Start New Conversation
-      </Button>
+        <Button
+          colorScheme="blue"
+          mb={6}
+          onClick={createNewConversation}
+          bg="blue.600"
+          _hover={{ bg: "blue.500" }}
+        >
+          Start New Conversation
+        </Button>
 
-      {isLoading ? (
-        <Text color="gray.300">Loading conversations...</Text>
-      ) : conversations.length === 0 ? (
-        <Text color="gray.300">No conversations found. Start a new one!</Text>
-      ) : (
-        <VStack align="stretch" gap={3}>
-          {conversations.map((conversation) => (
-            <Flex
-              key={conversation.id}
-              p={4}
-              borderWidth="1px"
-              borderRadius="md"
-              borderColor="gray.700"
-              alignItems="center"
-              justifyContent="space-between"
-              cursor="pointer"
-              bg="gray.900"
-              _hover={{ bg: "gray.800" }}
-              onClick={() => router.push(`/chat/${conversation.id}`)}
-            >
-              <Text color="gray.200">{conversation.title}</Text>
-              <Text color="gray.400" fontSize="sm">
-                Click to open
-              </Text>
-            </Flex>
-          ))}
-        </VStack>
-      )}
+        {isLoading ? (
+          <Text color="gray.300">Loading conversations...</Text>
+        ) : conversations.length === 0 ? (
+          <Text color="gray.300">No conversations found. Start a new one!</Text>
+        ) : (
+          <VStack align="stretch" gap={3}>
+            {conversations.map((conversation) => (
+              <Flex
+                key={conversation.id}
+                p={4}
+                borderWidth="1px"
+                borderRadius="md"
+                borderColor="gray.700"
+                alignItems="center"
+                justifyContent="space-between"
+                cursor="pointer"
+                bg="gray.900"
+                _hover={{ bg: "gray.800" }}
+                onClick={() => router.push(`/chat/${conversation.id}`)}
+              >
+                <Text color="gray.200">{conversation.title}</Text>
+                <Text color="gray.400" fontSize="sm">
+                  Click to open
+                </Text>
+              </Flex>
+            ))}
+          </VStack>
+        )}
+      </VStack>
     </Box>
   );
 }
