@@ -656,6 +656,7 @@ export async function recallMemory(
             .select("content, metadata, created_at")
             .eq("user_id", userId)
             .eq("is_longterm", true)
+            // No conversation_id filter here to ensure we get all long-term memories
             .order("created_at", { ascending: false })
             .limit(5);
 

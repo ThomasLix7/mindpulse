@@ -366,7 +366,55 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Delete the conversation (this will cascade delete the related memories)
+    // Handle memory deletion more carefully to preserve long-term memories
+
+    // 1. Delete only the non-long-term memories for this conversation
+    const { error: memoryDeleteError } = await supabase
+      .from("ai_memories")
+      .delete()
+      .eq("conversation_id", id)
+      .eq("is_longterm", false);
+
+    if (memoryDeleteError) {
+      console.error("Error deleting conversation memories:", memoryDeleteError);
+      return NextResponse.json(
+        { error: "Failed to delete conversation memories" },
+        { status: 500 }
+      );
+    }
+
+    // 2. For long-term memories, just remove the conversation_id reference
+    const { data: longTermMemories, error: longTermCheckError } = await supabase
+      .from("ai_memories")
+      .select("id")
+      .eq("conversation_id", id)
+      .eq("is_longterm", true);
+
+    if (longTermCheckError) {
+      console.error(
+        "Error checking for long-term memories:",
+        longTermCheckError
+      );
+    } else if (longTermMemories && longTermMemories.length > 0) {
+      console.log(
+        `Preserving ${longTermMemories.length} long-term memories by removing conversation reference`
+      );
+
+      const { error: memoryUpdateError } = await supabase
+        .from("ai_memories")
+        .update({ conversation_id: null })
+        .eq("conversation_id", id)
+        .eq("is_longterm", true);
+
+      if (memoryUpdateError) {
+        console.error(
+          "Error preserving long-term memories:",
+          memoryUpdateError
+        );
+      }
+    }
+
+    // 3. Now delete the conversation
     const { error } = await supabase
       .from("conversations")
       .delete()
@@ -381,7 +429,8 @@ export async function DELETE(request: Request) {
     }
 
     return NextResponse.json({
-      message: "Conversation deleted successfully",
+      message:
+        "Conversation deleted successfully (long-term memories preserved)",
       success: true,
     });
   } catch (error) {

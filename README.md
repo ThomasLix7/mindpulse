@@ -80,6 +80,21 @@ The API includes several smart features:
 
 4. **Metadata Management**: Automatically updates both the dedicated database columns and the metadata JSON for backward compatibility.
 
+### Long-Term Memory Preservation
+
+The system now preserves long-term memories even when the conversation they were created in is deleted:
+
+1. **Memory Preservation**: When a conversation is deleted, all regular memories are deleted, but long-term memories are preserved.
+
+2. **Database Implementation**:
+
+   - The foreign key constraint between `ai_memories` and `conversations` uses `ON DELETE SET NULL` instead of `CASCADE`
+   - When a conversation is deleted, its long-term memories have their `conversation_id` set to `NULL` rather than being deleted
+
+3. **Memory Recall**: The memory recall functions are designed to retrieve long-term memories for a user regardless of whether they have an associated conversation.
+
+This ensures important information is never lost, even as users clean up their conversation history.
+
 ### Internal API
 
 For direct use in your code:
