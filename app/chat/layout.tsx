@@ -4,14 +4,24 @@ import { Box, Flex, Heading, Text } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
 import { getCurrentUser } from "@/utils/supabase-client";
 import ConversationSidebar from "@/components/ConversationSidebar";
+import { useRouter, usePathname } from "next/navigation";
+
+// Define a type for conversations to fix the typing issue
+interface Conversation {
+  id: string;
+  title: string;
+  history?: Array<{ user: string; ai: string }>;
+}
 
 export default function ChatLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
-  const [conversations, setConversations] = useState([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load user and conversations
@@ -54,12 +64,39 @@ export default function ChatLayout({
     }
 
     loadUserAndConversations();
+
+    // Listen for conversation creation events
+    const handleNewConversation = (event: any) => {
+      console.log("Layout received conversation-created event:", event.detail);
+      setConversations((prev) => {
+        // Check if conversation already exists to avoid duplicates
+        if (prev.some((conv: any) => conv.id === event.detail.id)) {
+          return prev;
+        }
+        return [event.detail, ...prev];
+      });
+    };
+
+    // Add event listener for conversation created
+    window.addEventListener("conversation-created", handleNewConversation);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener("conversation-created", handleNewConversation);
+    };
   }, []);
 
   // Handle conversation deletion
   const deleteConversation = async (id: string) => {
+    // Get current conversation ID from URL
+    const currentConversationId = pathname.split("/").pop();
+    const isCurrentConversation = id === currentConversationId;
+
+    // Store conversations before updating state
+    const currentConversations = [...conversations];
+
     // Remove conversation from state immediately for responsive UI
-    setConversations((prev) => prev.filter((conv: any) => conv.id !== id));
+    setConversations((prev) => prev.filter((conv) => conv.id !== id));
 
     // For logged-in users, delete on the server
     if (user?.id) {
@@ -89,6 +126,26 @@ export default function ChatLayout({
         } catch (e) {
           console.error("Error updating stored conversations:", e);
         }
+      }
+    }
+
+    // If we deleted the current conversation, redirect to a different page
+    if (isCurrentConversation) {
+      console.log("Deleted the active conversation, redirecting...");
+
+      // Find another conversation to navigate to
+      const remainingConversations = currentConversations.filter(
+        (conv) => conv.id !== id
+      );
+
+      if (remainingConversations.length > 0) {
+        const nextConversation = remainingConversations[0];
+        console.log(`Redirecting to next conversation: ${nextConversation.id}`);
+        router.push(`/chat/${nextConversation.id}`);
+      } else {
+        // If no conversations left, go to main chat page
+        console.log("No conversations left, redirecting to /chat");
+        router.push("/chat");
       }
     }
   };

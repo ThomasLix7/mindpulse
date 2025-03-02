@@ -351,6 +351,13 @@ export default function Chat({
 
             setConversations((prev) => [newConversation, ...prev]);
 
+            // Dispatch an event to notify the sidebar of the new conversation
+            window.dispatchEvent(
+              new CustomEvent("conversation-created", {
+                detail: newConversation,
+              })
+            );
+
             // Navigate to the conversation instead of just setting active ID
             router.push(`/chat/${data.conversation.id}`);
 
@@ -375,6 +382,13 @@ export default function Chat({
       );
       setConversations((prev) => [newConversation, ...prev]);
 
+      // Dispatch an event to notify the sidebar of the new conversation
+      window.dispatchEvent(
+        new CustomEvent("conversation-created", {
+          detail: newConversation,
+        })
+      );
+
       // Navigate to the conversation instead of just setting active ID
       router.push(`/chat/${newConversationId}`);
 
@@ -388,6 +402,13 @@ export default function Chat({
         defaultTitle
       );
       setConversations((prev) => [newConversation, ...prev]);
+
+      // Dispatch an event to notify the sidebar of the new conversation
+      window.dispatchEvent(
+        new CustomEvent("conversation-created", {
+          detail: newConversation,
+        })
+      );
 
       // Navigate to the conversation instead of just setting active ID
       router.push(`/chat/${newConversationId}`);
