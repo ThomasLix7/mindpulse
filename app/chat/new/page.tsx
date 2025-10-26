@@ -1,7 +1,7 @@
 "use client";
 
 import { Box } from "@chakra-ui/react";
-import Chat from "@/components/Chat";
+import Mentor from "@/components/Mentor";
 
 export default function NewChatPage() {
   // Directly use the Chat component with conversationId="new"
@@ -9,7 +9,7 @@ export default function NewChatPage() {
   return (
     <Box padding={4}>
       <Box borderRadius="lg" boxShadow="md">
-        <Chat conversationId="new" />
+        <Mentor conversationId="new" />
       </Box>
     </Box>
   );

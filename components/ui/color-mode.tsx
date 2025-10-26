@@ -14,7 +14,13 @@ export function ColorModeProvider(props: ColorModeProviderProps) {
     <ClientOnly
       fallback={<div className="chakra-ui light">{props.children}</div>}
     >
-      <ThemeProvider attribute="class" disableTransitionOnChange {...props} />
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="light"
+        enableSystem={false}
+        disableTransitionOnChange
+        {...props}
+      />
     </ClientOnly>
   );
 }
@@ -35,13 +41,21 @@ export function useColorMode(): UseColorModeReturn {
     setMounted(true);
   }, []);
 
+  React.useEffect(() => {
+    if (mounted) {
+      // Ensure HTML class is updated
+      document.documentElement.className = resolvedTheme || "light";
+    }
+  }, [resolvedTheme, mounted]);
+
   return {
     colorMode: mounted ? (resolvedTheme as ColorMode) : "light",
     setColorMode: (mode) => {
       if (mounted) setTheme(mode);
     },
     toggleColorMode: () => {
-      if (mounted) setTheme(resolvedTheme === "dark" ? "light" : "dark");
+      const newTheme = resolvedTheme === "dark" ? "light" : "dark";
+      if (mounted) setTheme(newTheme);
     },
   };
 }

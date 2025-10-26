@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { getCurrentUser } from "@/utils/supabase-client";
 import ConversationSidebar from "@/components/ConversationSidebar";
 import { useRouter, usePathname } from "next/navigation";
+import { useColorMode } from "@/components/ui/color-mode";
 
 // Define a type for conversations to fix the typing issue
 interface Conversation {
@@ -20,6 +21,7 @@ export default function ChatLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { colorMode } = useColorMode();
   const [user, setUser] = useState<any>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,8 +152,8 @@ export default function ChatLayout({
       left="0"
       right="0"
       bottom="0"
-      bg="black"
-      color="white"
+      bg={colorMode === "dark" ? "gray.900" : "white"}
+      color={colorMode === "dark" ? "white" : "black"}
       overflow="hidden"
       className="chat-layout-container"
     >

@@ -1,27 +1,22 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Light theme */
+body {
+  background: #ffffff;
+  color: #171717;
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Dark theme */
+html.dark body {
+  background: #0a0a0a !important;
+  color: #ededed !important;
 }
 
 html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -35,34 +30,6 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
-
-.chakra-ui {
-  color-scheme: light;
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-.chakra-ui.dark {
-  color-scheme: dark;
-  --background: #0a0a0a;
-  --foreground: #ededed;
-}
-
-.chakra-ui.light {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-.chakra-ui.dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-}
-
 .ai-response {
   transition: opacity 0.1s ease-in-out;
 }
@@ -72,14 +39,14 @@ a {
 }
 
 main {
-  min-height: calc(100vh - 64px); /* Adjust based on navbar height */
+  min-height: calc(100vh - 64px);
   padding: 1rem;
   width: 100%;
   display: flex;
   flex-direction: column;
 }
 
-/* Fix for chat page layout */
+/* Chat layout */
 .chat-layout-container {
   height: calc(100vh - 64px);
   margin: 0;

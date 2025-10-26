@@ -78,7 +78,7 @@ export default function LongTermMemories() {
 
       if (data.success && Array.isArray(data.memories)) {
         setMemories(data.memories);
-        console.log(`Loaded ${data.memories.length} long-term memories`);
+        `Loaded ${data.memories.length} long-term memories`;
       } else {
         setError(data.error || "No memories found");
         setMemories([]);

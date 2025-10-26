@@ -2,7 +2,7 @@
 
 import { Box, Button, Text, Stack, Spinner } from "@chakra-ui/react";
 import { useRouter, usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useColorMode } from "@/components/ui/color-mode";
 
 interface ConversationSidebarProps {
   conversations: any[];
@@ -17,31 +17,28 @@ export default function ConversationSidebar({
   userId,
   onDeleteConversation,
 }: ConversationSidebarProps) {
+  const { colorMode } = useColorMode();
   const router = useRouter();
   const pathname = usePathname();
   const currentConversationId = pathname?.split("/").pop();
 
-  // Navigate to specific conversation
   const navigateToConversation = (id: string) => {
-    // Don't navigate if we're already on this conversation
     if (id === currentConversationId) {
-      console.log("Already on this conversation, not navigating");
+      ("Already on this conversation, not navigating");
       return;
     }
 
-    console.log(`Navigating to conversation: ${id}`);
+    `Navigating to conversation: ${id}`;
     router.push(`/chat/${id}`);
   };
 
-  // Create new conversation - use /chat/new to delegate creation to Chat component
   const createNewConversation = () => {
-    console.log("ConversationSidebar: Requesting new conversation");
+    ("ConversationSidebar: Requesting new conversation");
     router.push("/chat/new");
   };
 
-  // Handle delete conversation
   const handleDelete = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation(); // Prevent triggering the parent click event
+    e.stopPropagation();
     if (onDeleteConversation) {
       onDeleteConversation(id);
     }
@@ -54,14 +51,19 @@ export default function ConversationSidebar({
       borderColor="gray.700"
       p={3}
       display={{ base: "none", md: "block" }}
-      bg="gray.900"
+      bg={colorMode === "dark" ? "gray.900" : "gray.50"}
       h="100%"
       overflow="hidden"
       position="relative"
     >
       <Stack h="100%" gap={3} display="flex" flexDirection="column">
         {/* Sidebar Header */}
-        <Text fontSize="sm" fontWeight="bold" color="gray.400" mb={2}>
+        <Text
+          fontSize="sm"
+          fontWeight="bold"
+          color={colorMode === "dark" ? "gray.400" : "gray.600"}
+          mb={2}
+        >
           CONVERSATIONS
         </Text>
 
@@ -69,13 +71,20 @@ export default function ConversationSidebar({
         {isLoading ? (
           <Box textAlign="center" py={8}>
             <Spinner size="sm" color="blue.400" />
-            <Text mt={2} fontSize="sm" color="gray.400">
+            <Text
+              mt={2}
+              fontSize="sm"
+              color={colorMode === "dark" ? "gray.400" : "gray.600"}
+            >
               Loading conversations...
             </Text>
           </Box>
         ) : conversations.length === 0 ? (
           <Box textAlign="center" py={8}>
-            <Text fontSize="sm" color="gray.400">
+            <Text
+              fontSize="sm"
+              color={colorMode === "dark" ? "gray.400" : "gray.600"}
+            >
               No conversations yet
             </Text>
           </Box>

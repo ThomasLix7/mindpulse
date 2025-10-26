@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Heading, Text, Button, VStack, Flex } from "@chakra-ui/react";
 import { getCurrentUser } from "@/utils/supabase-client";
+import { useColorMode } from "@/components/ui/color-mode";
 
 interface Conversation {
   id: string;
@@ -12,6 +13,7 @@ interface Conversation {
 }
 
 export default function ChatDefaultPage() {
+  const { colorMode } = useColorMode();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -27,15 +29,10 @@ export default function ChatDefaultPage() {
       setUser(currentUser);
 
       if (currentUser?.id) {
-        // User is authenticated, load from the database
-        console.log(
-          "Loading conversations from database for user:",
-          currentUser.id
-        );
+        // Load from database for authenticated users
         await fetchConversationsFromServer(currentUser.id);
       } else {
-        // User is not authenticated, load from localStorage
-        console.log("Loading conversations from localStorage (anonymous user)");
+        // Load from localStorage for anonymous users
         loadConversationsFromLocalStorage();
       }
 
@@ -56,7 +53,6 @@ export default function ChatDefaultPage() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Server returned conversations:", data);
 
         if (
           data.success &&
@@ -64,12 +60,8 @@ export default function ChatDefaultPage() {
           Array.isArray(data.conversations)
         ) {
           setConversations(data.conversations);
-          console.log(
-            `Loaded ${data.conversations.length} conversations from server`
-          );
         }
       } else {
-        console.error("Server error:", response.status);
         // Fallback to localStorage if server fails
         loadConversationsFromLocalStorage();
       }
@@ -105,7 +97,11 @@ export default function ChatDefaultPage() {
   return (
     <Box h="100%" p={4} className="chat-page-container">
       <VStack gap={6} align="center" justify="center" h="100%">
-        <Heading size="lg" mb={6} color="white">
+        <Heading
+          size="lg"
+          mb={6}
+          color={colorMode === "dark" ? "white" : "black"}
+        >
           All Conversations
         </Heading>
 

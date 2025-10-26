@@ -1,7 +1,7 @@
 "use client";
 
 import { Box } from "@chakra-ui/react";
-import Chat from "@/components/Chat";
+import Mentor from "@/components/Mentor";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -13,15 +13,15 @@ export default function ChatPage() {
   // Set loading state and log for debugging
   useEffect(() => {
     if (conversationId) {
-      console.log(`ChatPage: Loading conversation with ID: ${conversationId}`);
+      `ChatPage: Loading conversation with ID: ${conversationId}`;
 
       // Handle "new" as a special case
       if (conversationId === "new") {
-        console.log("ChatPage: This is a new conversation page");
+        ("ChatPage: This is a new conversation page");
         // We don't need to do anything special here - the Chat component will handle
         // creating a new conversation when conversationId is "new"
       } else {
-        console.log("ChatPage: This is an existing conversation");
+        ("ChatPage: This is an existing conversation");
       }
 
       setIsLoading(false);
@@ -37,7 +37,7 @@ export default function ChatPage() {
   return (
     <Box padding={4}>
       <Box borderRadius="lg" boxShadow="md">
-        <Chat key={conversationId} conversationId={conversationId} />
+        <Mentor key={conversationId} conversationId={conversationId} />
       </Box>
     </Box>
   );
