@@ -15,7 +15,6 @@ import { SupabaseClient } from "@supabase/supabase-js";
  * - PUT: Find an existing memory (previously findMemory endpoint)
  */
 
-// Validate user ID helper function to reduce code duplication
 async function validateUserId(userId: string) {
   if (!userId) {
     return {
@@ -66,7 +65,6 @@ async function validateUserId(userId: string) {
   }
 }
 
-// GET endpoint handles retrieving memories from long-term storage
 export async function GET(request: Request) {
   try {
     // Get the URL parameters
@@ -406,7 +404,6 @@ export async function GET(request: Request) {
   }
 }
 
-// POST endpoint handles saving memories to long-term storage
 export async function POST(request: Request) {
   try {
     // Parse the request
@@ -517,7 +514,6 @@ export async function POST(request: Request) {
   }
 }
 
-// DELETE endpoint handles forgetting a memory (setting is_longterm to false)
 export async function DELETE(request: Request) {
   try {
     // Parse the request from URL parameters for DELETE
@@ -723,7 +719,6 @@ export async function DELETE(request: Request) {
   }
 }
 
-// PUT endpoint handles finding a memory based on content
 export async function PUT(request: Request) {
   try {
     // Parse the request

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/utils/supabase-server";
 
-// POST to clear conversation history
 export async function POST(request: Request) {
   try {
     // Parse the request body

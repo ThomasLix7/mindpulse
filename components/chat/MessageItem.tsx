@@ -2,7 +2,6 @@ import { Box, Text, Button } from "@chakra-ui/react";
 import { useColorMode } from "@/components/ui/color-mode";
 import { Message } from "@/types/chat";
 
-// Normalize isLongterm flag checking
 function isLongtermMemory(item: any): boolean {
   return Boolean(
     item.is_longterm === true ||

@@ -7,7 +7,6 @@ import ConversationSidebar from "@/components/ConversationSidebar";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
 
-// Define a type for conversations to fix the typing issue
 interface Conversation {
   id: string;
   title: string;

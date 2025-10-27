@@ -6,7 +6,6 @@ import { createServerClient } from "@/utils/supabase-server";
 
 export const maxDuration = 30;
 
-// Cache for conversation histories
 const conversationHistory = new Map<string, any[]>();
 
 function getConversationHistory(conversationId: string) {
@@ -24,7 +23,6 @@ function updateConversationHistory(
   conversationHistory.set(conversationId, history);
 }
 
-// Update the conversation's updated_at timestamp
 async function updateConversationTimestamp(conversationId: string) {
   try {
     const supabase = await createServerClient();

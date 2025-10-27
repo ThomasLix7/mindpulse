@@ -3,7 +3,6 @@ import { createServerClient } from "@/utils/supabase-server";
 import { getVectorStore } from "@/lib/vectorstore";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
-// Interface for conversation data
 export interface Conversation {
   id: string;
   title: string;
@@ -12,7 +11,6 @@ export interface Conversation {
   is_archived?: boolean;
 }
 
-// Interface for memory rows from the database
 interface MemoryRow {
   content: string;
   metadata: {
@@ -27,7 +25,6 @@ interface MemoryRow {
   user_id?: string;
 }
 
-// GET all conversations for a user
 export async function GET(request: Request) {
   try {
     // Get the user ID from query params
@@ -164,7 +161,6 @@ export async function GET(request: Request) {
   }
 }
 
-// Helper function to get conversation history
 async function getConversationHistory(conversationId: string, userId: string) {
   try {
     // Log that we're fetching history
@@ -307,7 +303,6 @@ async function getConversationHistory(conversationId: string, userId: string) {
   }
 }
 
-// Create a new conversation
 export async function POST(request: Request) {
   try {
     const { title, userId } = await request.json();
@@ -351,7 +346,6 @@ export async function POST(request: Request) {
   }
 }
 
-// Update an existing conversation
 export async function PUT(request: Request) {
   try {
     const { id, title, is_archived, userId } = await request.json();
@@ -412,7 +406,6 @@ export async function PUT(request: Request) {
   }
 }
 
-// DELETE a conversation
 export async function DELETE(request: Request) {
   try {
     // Get the conversation ID and user ID from query params

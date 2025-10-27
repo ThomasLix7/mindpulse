@@ -6,7 +6,6 @@
  * 2. If the API response is correctly handling empty conversations
  */
 
-// Mock sessionStorage for testing
 const sessionStorageMock = {
   store: {},
   getItem: function (key) {
@@ -20,7 +19,6 @@ const sessionStorageMock = {
   },
 };
 
-// Test scenario 1: First attempt to load conversation
 function testFirstAttempt() {
   console.log("TEST 1: First attempt to load conversation");
   sessionStorageMock.clear();
@@ -37,7 +35,6 @@ function testFirstAttempt() {
   sessionStorageMock.setItem(`attempted-load-${conversationId}`, "true");
 }
 
-// Test scenario 2: Second attempt to load conversation
 function testSecondAttempt() {
   console.log("\nTEST 2: Second attempt to load conversation");
 
@@ -50,7 +47,6 @@ function testSecondAttempt() {
   console.log(`Should attempt to load: ${hasAttemptedLoad !== "true"}`);
 }
 
-// Test API response handling
 function testApiResponse() {
   console.log("\nTEST 3: API response handling");
 
@@ -79,7 +75,6 @@ function testApiResponse() {
   }
 }
 
-// Run tests
 testFirstAttempt();
 testSecondAttempt();
 testApiResponse();

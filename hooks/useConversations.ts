@@ -3,12 +3,10 @@ import { useRouter } from "next/navigation";
 import { getCurrentUser } from "@/utils/supabase-client";
 import { Conversation } from "@/types/chat";
 
-// Generate unique conversation ID
 function generateConversationId(): string {
   return `conv-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
 }
 
-// Normalize isLongterm flag checking
 function isLongtermMemory(item: any): boolean {
   return Boolean(
     item.is_longterm === true ||

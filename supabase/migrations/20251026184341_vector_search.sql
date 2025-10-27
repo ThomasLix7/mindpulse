@@ -1,5 +1,5 @@
--- Enable the pgvector extension
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Vector Search
+-- Adds pgvector support and similarity search functions
 
 -- Add embedding column to ai_memories if it doesn't exist
 DO $$
@@ -95,4 +95,48 @@ BEGIN
     -- Execute the query
     RETURN QUERY EXECUTE query_text USING query_embedding, match_count;
 END;
-$$; 
+$$;
+
+-- Add a function to search memories using full-text search
+CREATE OR REPLACE FUNCTION search_memories(
+    search_query TEXT,
+    user_id_param UUID DEFAULT NULL,
+    conversation_id_param UUID DEFAULT NULL,
+    include_longterm BOOLEAN DEFAULT true,
+    limit_param INTEGER DEFAULT 10
+)
+RETURNS TABLE (
+    id UUID,
+    content TEXT,
+    created_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB,
+    conversation_id UUID,
+    conversation_title TEXT,
+    similarity REAL
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        am.id,
+        am.content,
+        am.created_at,
+        am.metadata,
+        am.conversation_id,
+        c.title AS conversation_title,
+        ts_rank_cd(am.ts_content, websearch_to_tsquery('english', search_query)) AS similarity
+    FROM 
+        public.ai_memories am
+    LEFT JOIN 
+        public.conversations c ON am.conversation_id = c.id
+    WHERE
+        am.ts_content @@ websearch_to_tsquery('english', search_query)
+        AND (user_id_param IS NULL OR am.user_id = user_id_param)
+        AND (conversation_id_param IS NULL OR am.conversation_id = conversation_id_param)
+        AND (include_longterm = true OR am.is_longterm = false)
+    ORDER BY
+        similarity DESC
+    LIMIT limit_param;
+END;
+$$;

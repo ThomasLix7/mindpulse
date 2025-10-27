@@ -14,7 +14,6 @@ import { getCurrentUser } from "@/utils/supabase-client";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
-// Memory interface
 interface Memory {
   userMessage: string;
   aiResponse: string;

@@ -2,8 +2,6 @@ import { getVectorStore } from "../lib/vectorstore";
 import { Document } from "@langchain/core/documents";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
-// The Document's metadata is only used internally by the vector store library for filtering
-// This isn't stored in a "metadata" column in the database
 export async function saveMemory(
   conversationId: string,
   userMessage: string,

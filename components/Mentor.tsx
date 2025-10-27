@@ -3,17 +3,12 @@ import { useRef, useEffect } from "react";
 import { Box, Button, Flex } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
-// Custom hooks
 import { useConversations } from "@/hooks/useConversations";
 import { useMemory } from "@/hooks/useMemory";
 import { useChat } from "@/hooks/useChat";
-
-// Components
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
-
-// Types
 import { ChatProps } from "@/types/chat";
 
 export default function ChatRefactored({
