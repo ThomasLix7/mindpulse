@@ -28,19 +28,19 @@ export default function ChatDefaultPage() {
       const { user: currentUser } = await getCurrentUser();
       setUser(currentUser);
 
-      if (currentUser?.id) {
-        // Load from database for authenticated users
-        await fetchConversationsFromServer(currentUser.id);
-      } else {
-        // Load from localStorage for anonymous users
-        loadConversationsFromLocalStorage();
+      // Redirect to login if not authenticated
+      if (!currentUser?.id) {
+        router.push("/login");
+        return;
       }
 
+      // Load from database for authenticated users
+      await fetchConversationsFromServer(currentUser.id);
       setIsLoading(false);
     };
 
     loadConversations();
-  }, []);
+  }, [router]);
 
   // Fetch conversations from server for logged-in users
   const fetchConversationsFromServer = async (userId: string) => {
@@ -62,30 +62,10 @@ export default function ChatDefaultPage() {
           setConversations(data.conversations);
         }
       } else {
-        // Fallback to localStorage if server fails
-        loadConversationsFromLocalStorage();
+        console.error("Failed to fetch conversations from server");
       }
     } catch (error) {
       console.error("Error fetching conversations from server:", error);
-      // Fallback to localStorage if server fails
-      loadConversationsFromLocalStorage();
-    }
-  };
-
-  // Load conversations from localStorage (for anonymous users)
-  const loadConversationsFromLocalStorage = () => {
-    const storedConversations = localStorage.getItem("mindpulse-conversations");
-
-    if (storedConversations) {
-      try {
-        const parsedConversations = JSON.parse(storedConversations);
-        setConversations(parsedConversations);
-        console.log(
-          `Loaded ${parsedConversations.length} conversations from localStorage`
-        );
-      } catch (e) {
-        console.error("Error parsing stored conversations:", e);
-      }
     }
   };
 

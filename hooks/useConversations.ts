@@ -69,20 +69,14 @@ export function useConversations(
     };
 
     checkAuth();
-  }, []);
+  }, [conversationId]);
 
   // Watch for conversationId changes
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !authChecked) return;
 
     // Clear loading state
     setHistoryLoading(true);
-
-    if (conversationId === "new") {
-      // Create new conversation
-      createNewConversation();
-      return;
-    }
 
     if (conversationId && conversationId !== "new") {
       // Set as active conversation
@@ -94,32 +88,20 @@ export function useConversations(
         .then(() => setHistoryLoading(false))
         .catch(() => setHistoryLoading(false));
     }
-  }, [conversationId, user?.id]);
+  }, [conversationId, user?.id, authChecked]);
 
   // Load conversations from localStorage or server
   const loadConversations = async (userId?: string) => {
     setHistoryLoading(true);
 
-    // Add timeout for loading state
-    const timeout = setTimeout(() => {
-      setHistoryLoading(false);
-      loadConversationsFromLocalStorage();
-    }, 10000);
-
     try {
       if (userId) {
         // Fetch from server
         await fetchConversationsFromServer(userId);
-      } else {
-        // Load from localStorage
-        loadConversationsFromLocalStorage();
       }
     } catch (error) {
       console.error("Error loading conversations:", error);
-      // Fallback to localStorage
-      loadConversationsFromLocalStorage();
     } finally {
-      clearTimeout(timeout);
       setHistoryLoading(false);
     }
   };
@@ -162,181 +144,64 @@ export function useConversations(
           // Set most recent conversation
           else if (clientConversations.length > 0) {
             setActiveConversationId(clientConversations[0].id);
-          } else {
-            // Create new conversation
-            createNewConversation();
           }
-        } else {
-          createNewConversation();
+          // Don't create new conversation here - let the component handle it
         }
-      } else {
-        createNewConversation();
+        // Don't create new conversation here - let the component handle it
       }
+      // Don't create new conversation here - let the component handle it
     } catch (error) {
       console.error("Error fetching conversations:", error);
-      createNewConversation();
+      // Don't create new conversation here - let the component handle it
     }
   };
-
-  // Load conversations from localStorage
-  const loadConversationsFromLocalStorage = () => {
-    const storedConversations = localStorage.getItem("mindpulse-conversations");
-    const storedActiveConversation = localStorage.getItem(
-      "mindpulse-active-conversation"
-    );
-
-    if (storedConversations) {
-      try {
-        const parsedConversations = JSON.parse(storedConversations);
-        setConversations(parsedConversations);
-
-        // Prioritize conversationId from URL
-        if (
-          conversationId &&
-          parsedConversations.some((c: Conversation) => c.id === conversationId)
-        ) {
-          // Already set in initial state
-        }
-        // Fall back to stored conversation
-        else if (
-          storedActiveConversation &&
-          parsedConversations.some(
-            (c: Conversation) => c.id === storedActiveConversation
-          )
-        ) {
-          setActiveConversationId(storedActiveConversation);
-        } else if (parsedConversations.length > 0) {
-          setActiveConversationId(parsedConversations[0].id);
-        } else {
-          createNewConversation();
-        }
-      } catch (e) {
-        console.error("Error parsing stored conversations:", e);
-        createNewConversation();
-      }
-    } else {
-      // Create first conversation
-      createNewConversation();
-    }
-  };
-
-  // Save conversations to localStorage
-  useEffect(() => {
-    if (conversations.length > 0 && !user) {
-      localStorage.setItem(
-        "mindpulse-conversations",
-        JSON.stringify(conversations)
-      );
-      localStorage.setItem(
-        "mindpulse-active-conversation",
-        activeConversationId
-      );
-    }
-  }, [conversations, activeConversationId, user]);
 
   // Create new conversation
   const createNewConversation = async () => {
-    let newConversationId: string;
+    // Prevent multiple simultaneous creations
+    if (historyLoading || !user?.id) return null;
+
     const defaultTitle = "New Conversation";
 
-    // Create on server for logged-in users
-    if (user?.id) {
-      try {
-        const serverResponse = await fetch("/api/conversations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            title: defaultTitle,
-          }),
-        });
+    try {
+      const serverResponse = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          title: defaultTitle,
+        }),
+      });
 
-        if (serverResponse.ok) {
-          const data = await serverResponse.json();
-          if (data.success && data.conversation) {
-            const newConversation = {
-              id: data.conversation.id,
-              title: data.conversation.title,
-              history: [],
-            };
+      if (serverResponse.ok) {
+        const data = await serverResponse.json();
+        if (data.success && data.conversation) {
+          const newConversation = {
+            id: data.conversation.id,
+            title: data.conversation.title,
+            history: [],
+          };
 
-            setConversations((prev) => [newConversation, ...prev]);
+          setConversations((prev) => [newConversation, ...prev]);
 
-            // Notify sidebar of new conversation
-            window.dispatchEvent(
-              new CustomEvent("conversation-created", {
-                detail: newConversation,
-              })
-            );
+          // Notify sidebar of new conversation
+          window.dispatchEvent(
+            new CustomEvent("conversation-created", {
+              detail: newConversation,
+            })
+          );
 
-            // Navigate to conversation
-            router.push(`/chat/${data.conversation.id}`);
+          // Navigate to conversation
+          router.push(`/chat/${data.conversation.id}`);
 
-            return data.conversation.id;
-          } else {
-            // Fallback to client-side ID
-            newConversationId = generateConversationId();
-          }
-        } else {
-          newConversationId = generateConversationId();
+          return data.conversation.id;
         }
-      } catch (error) {
-        newConversationId = generateConversationId();
       }
-    } else {
-      // Create local conversation for anonymous users
-      newConversationId = generateConversationId();
-      const newConversation = createLocalConversation(
-        newConversationId,
-        defaultTitle
-      );
-      setConversations((prev) => [newConversation, ...prev]);
-
-      // Notify sidebar of new conversation
-      window.dispatchEvent(
-        new CustomEvent("conversation-created", {
-          detail: newConversation,
-        })
-      );
-
-      // Navigate to conversation
-      router.push(`/chat/${newConversationId}`);
-
-      return newConversationId;
-    }
-
-    // Create conversation locally if server failed
-    if (newConversationId) {
-      const newConversation = createLocalConversation(
-        newConversationId,
-        defaultTitle
-      );
-      setConversations((prev) => [newConversation, ...prev]);
-
-      // Notify sidebar of new conversation
-      window.dispatchEvent(
-        new CustomEvent("conversation-created", {
-          detail: newConversation,
-        })
-      );
-
-      // Navigate to conversation
-      router.push(`/chat/${newConversationId}`);
-
-      return newConversationId;
+    } catch (error) {
+      console.error("Error creating conversation:", error);
     }
 
     return null;
-  };
-
-  // Create local conversation
-  const createLocalConversation = (id: string, title: string): Conversation => {
-    const newConversation = {
-      id,
-      title,
-      history: [],
-    };
-    return newConversation;
   };
 
   // Rename conversation
@@ -507,10 +372,28 @@ export function useConversations(
         return;
       }
 
-      // No need to check if it has history - that responsibility now belongs solely
       // to the loadSpecificConversation function with its empty check tracking
     }
   }, [historyLoading, authChecked, activeConversationId, user?.id]);
+
+  // Create a new conversation if none exist and we're not loading
+  useEffect(() => {
+    if (
+      !historyLoading &&
+      authChecked &&
+      conversations.length === 0 &&
+      !conversationId
+    ) {
+      createNewConversation();
+    }
+  }, [historyLoading, authChecked, conversations.length, conversationId]);
+
+  // Handle "new" conversation creation
+  useEffect(() => {
+    if (conversationId === "new" && !historyLoading && authChecked) {
+      createNewConversation();
+    }
+  }, [conversationId, historyLoading, authChecked]);
 
   // Load specific conversation by ID
   const loadSpecificConversation = async (
@@ -548,42 +431,6 @@ export function useConversations(
           setHistoryLoading(false);
           return existingConversation;
         }
-      }
-
-      // Check localStorage for anonymous users
-      if (!user?.id) {
-        try {
-          const storedConversationsString =
-            localStorage.getItem("conversations");
-          if (storedConversationsString) {
-            const storedConversations = JSON.parse(storedConversationsString);
-            const storedConvo = storedConversations.find(
-              (c: any) => c.id === conversationId
-            );
-
-            if (storedConvo) {
-              // Ensure it has a history array even if empty
-              storedConvo.history = storedConvo.history || [];
-
-              // Add to memory
-              setConversations((prevConvos) => {
-                // Avoid duplicates
-                const filtered = prevConvos.filter(
-                  (c) => c.id !== conversationId
-                );
-                return [...filtered, storedConvo];
-              });
-
-              setHistoryLoading(false);
-              return storedConvo;
-            }
-          }
-        } catch (error) {
-          console.error("Error reading from localStorage:", error);
-        }
-
-        setHistoryLoading(false);
-        return null;
       }
 
       // For authenticated users, fetch from server

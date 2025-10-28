@@ -2,31 +2,37 @@
 
 import { Box } from "@chakra-ui/react";
 import Mentor from "@/components/Mentor";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { getCurrentUser } from "@/utils/supabase-client";
 
 export default function ChatPage() {
   const params = useParams();
+  const router = useRouter();
   const conversationId = params.id as string;
   const [isLoading, setIsLoading] = useState(true);
 
-  // Set loading state and log for debugging
+  // Check authentication and set loading state
   useEffect(() => {
-    if (conversationId) {
-      `ChatPage: Loading conversation with ID: ${conversationId}`;
+    const checkAuth = async () => {
+      const { user } = await getCurrentUser();
 
-      // Handle "new" as a special case
-      if (conversationId === "new") {
-        ("ChatPage: This is a new conversation page");
-        // We don't need to do anything special here - the Chat component will handle
-        // creating a new conversation when conversationId is "new"
-      } else {
-        ("ChatPage: This is an existing conversation");
+      // Redirect to login if not authenticated
+      if (!user?.id) {
+        router.push("/login");
+        return;
       }
 
-      setIsLoading(false);
-    }
-  }, [conversationId]);
+      if (conversationId) {
+        console.log(
+          `ChatPage: Loading conversation with ID: ${conversationId}`
+        );
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [conversationId, router]);
 
   if (isLoading) {
     return <Box padding={8}>Loading conversation...</Box>;
