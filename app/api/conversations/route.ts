@@ -8,7 +8,6 @@ export interface Conversation {
   title: string;
   created_at?: string;
   updated_at?: string;
-  is_archived?: boolean;
 }
 
 interface MemoryRow {
@@ -92,7 +91,6 @@ export async function GET(request: Request) {
       .from("conversations")
       .select("*")
       .eq("user_id", userId)
-      .eq("is_archived", false)
       .order("updated_at", { ascending: false });
 
     if (error) {
@@ -348,7 +346,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const { id, title, is_archived, userId } = await request.json();
+    const { id, title, userId } = await request.json();
 
     if (!id || !userId) {
       return NextResponse.json(
@@ -374,9 +372,8 @@ export async function PUT(request: Request) {
     }
 
     // Update the conversation
-    const updateData: { title?: string; is_archived?: boolean } = {};
+    const updateData: { title?: string } = {};
     if (title !== undefined) updateData.title = title;
-    if (is_archived !== undefined) updateData.is_archived = is_archived;
 
     const { data, error } = await supabase
       .from("conversations")
