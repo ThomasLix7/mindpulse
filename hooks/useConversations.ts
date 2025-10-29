@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser } from "@/utils/supabase-client";
+import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { Conversation } from "@/types/chat";
 
 function generateConversationId(): string {
@@ -109,10 +109,23 @@ export function useConversations(
   // Fetch conversations from server
   const fetchConversationsFromServer = async (userId: string) => {
     try {
+      // Get user's access token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        throw new Error("No access token available");
+      }
+
       // Get conversation list without history
       const response = await fetch(`/api/conversations?userId=${userId}`, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
       });
 
       if (response.ok) {
@@ -164,9 +177,22 @@ export function useConversations(
     const defaultTitle = "New Conversation";
 
     try {
+      // Get user's access token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        throw new Error("No access token available");
+      }
+
       const serverResponse = await fetch("/api/conversations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           userId: user.id,
           title: defaultTitle,
@@ -436,10 +462,25 @@ export function useConversations(
       // For authenticated users, fetch from server
       if (user?.id) {
         try {
+          // Get user's access token
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          const accessToken = session?.access_token;
+
+          if (!accessToken) {
+            throw new Error("No access token available");
+          }
+
           const response = await fetch(
             `/api/conversations?userId=${encodeURIComponent(
               user.id
-            )}&conversationId=${encodeURIComponent(conversationId)}`
+            )}&conversationId=${encodeURIComponent(conversationId)}`,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
           );
 
           if (!response.ok) {

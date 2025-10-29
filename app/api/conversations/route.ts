@@ -39,8 +39,39 @@ export async function GET(request: Request) {
       );
     }
 
-    // Verify the user exists
+    // Get access token from Authorization header
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authorization token required" },
+        { status: 401 }
+      );
+    }
+
+    const accessToken = authHeader.substring(7); // Remove "Bearer " prefix
+
+    // Create server client with user context
     const supabase = await createServerClient();
+
+    // Set the user session using the access token
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(accessToken);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid access token" },
+        { status: 401 }
+      );
+    }
+
+    // Verify the user ID matches the token
+    if (user.id !== userId) {
+      return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
+    }
+
+    // Verify the user exists
     const { data: userData, error: userError } = await supabase
       .from("profiles")
       .select("id")
@@ -312,8 +343,37 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create a new conversation
+    // Get access token from Authorization header
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authorization token required" },
+        { status: 401 }
+      );
+    }
+
+    const accessToken = authHeader.substring(7);
+
+    // Create server client with user context
     const supabase = await createServerClient();
+
+    // Set the user session using the access token
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(accessToken);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid access token" },
+        { status: 401 }
+      );
+    }
+
+    // Verify the user ID matches the token
+    if (user.id !== userId) {
+      return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
+    }
     const { data, error } = await supabase
       .from("conversations")
       .insert({

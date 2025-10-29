@@ -8,12 +8,44 @@ CREATE TABLE public.profiles (
   avatar_url text,
   age_range text, -- '18-25', '26-35', etc.
   education_level text, -- 'high_school', 'bachelor', 'master', 'phd'
-  learning_experience text, -- 'beginner', 'intermediate', 'advanced'
+  career_target text, -- Career goal/aspiration
+  learning_preferences jsonb, -- Learning style and preferences
   preferred_languages jsonb, -- Array of language codes
   accessibility_needs jsonb, -- Accessibility requirements
   timezone text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
+);
+
+-- Automatically create a profile when a new auth user is created
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id)
+  VALUES (NEW.id)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_new_user();
+
+-- User Skills
+CREATE TABLE user_skills (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  skill_name text NOT NULL,
+  proficiency_level text NOT NULL, -- 'beginner', 'intermediate', 'advanced', 'expert'
+  category text, -- 'technical', 'language', 'soft_skills', etc.
+  last_updated timestamptz DEFAULT now()
 );
 
 -- Subject Management
@@ -89,6 +121,9 @@ CREATE TABLE feedback_events (
 
 -- Indexes
 CREATE INDEX profiles_username_idx ON public.profiles (username);
+CREATE INDEX user_skills_user_id_idx ON user_skills(user_id);
+CREATE INDEX user_skills_skill_name_idx ON user_skills(skill_name);
+CREATE INDEX user_skills_user_skill_idx ON user_skills(user_id, skill_name);
 CREATE INDEX idx_subjects_domain_id ON subjects(domain_id);
 CREATE INDEX learning_goals_user_id_idx ON learning_goals(user_id);
 CREATE INDEX learning_goals_status_idx ON learning_goals(status);
@@ -99,6 +134,7 @@ CREATE INDEX idx_feedback_events_user_id ON feedback_events(user_id);
 
 -- Row Level Security
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_skills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE domains ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subjects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE learning_goals ENABLE ROW LEVEL SECURITY;
@@ -112,6 +148,9 @@ FOR SELECT USING (id = auth.uid());
 
 CREATE POLICY "User can update own profile" ON public.profiles
 FOR UPDATE USING (id = auth.uid());
+
+CREATE POLICY "User access to own skills" ON user_skills
+FOR ALL USING (user_id = auth.uid());
 
 CREATE POLICY "Users can access domains" ON domains FOR SELECT USING (true);
 CREATE POLICY "Users can access subjects" ON subjects FOR SELECT USING (true);
@@ -138,6 +177,14 @@ CREATE TRIGGER update_conversations_updated_at
 BEFORE UPDATE ON conversations
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
+
+-- Profile view with email (read-only convenience)
+CREATE OR REPLACE VIEW profile_with_email AS
+SELECT 
+  p.*,
+  au.email
+FROM public.profiles p
+JOIN auth.users au ON p.id = au.id;
 
 -- Seed data
 INSERT INTO domains (name, description, color_code, icon) VALUES

@@ -56,7 +56,6 @@ export function NavBar() {
     // Subscribe to auth state changes using Supabase's auth listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        "Auth state changed:", event;
         // Update user state based on session
         setUser(session?.user || null);
       }
@@ -102,17 +101,14 @@ export function NavBar() {
 
   const handleLogout = async () => {
     try {
-      ("Signing out...");
       const { error } = await signOut();
       if (error) {
         console.error("Sign out error:", error);
         return;
       }
 
-      ("Sign out successful");
       setUser(null);
       setIsUserMenuOpen(false);
-      ("Redirecting to login page...");
       router.push("/login");
       router.refresh();
     } catch (error) {
