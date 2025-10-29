@@ -2,29 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Box, Heading, Text, Button, VStack, Flex } from "@chakra-ui/react";
-import { getCurrentUser, supabase } from "@/utils/supabase-client";
+import { Box, Heading, Text, Button, VStack } from "@chakra-ui/react";
+import { getCurrentUser } from "@/utils/supabase-client";
 import { useColorMode } from "@/components/ui/color-mode";
-
-interface Conversation {
-  id: string;
-  title: string;
-  history: Array<{ user: string; ai: string }>;
-}
 
 export default function ChatDefaultPage() {
   const { colorMode } = useColorMode();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const router = useRouter();
 
-  // Load conversations based on authentication status
+  // Check authentication status
   useEffect(() => {
-    const loadConversations = async () => {
-      setIsLoading(true);
-
-      // Check authentication status
+    const checkAuth = async () => {
       const { user: currentUser } = await getCurrentUser();
       setUser(currentUser);
 
@@ -34,53 +24,11 @@ export default function ChatDefaultPage() {
         return;
       }
 
-      // Fetch immediately with current session
-      await fetchConversationsFromServer(currentUser.id);
       setIsLoading(false);
     };
 
-    loadConversations();
+    checkAuth();
   }, [router]);
-
-  // Fetch conversations from server for logged-in users
-  const fetchConversationsFromServer = async (userId: string) => {
-    try {
-      // Get the session token
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        console.error("No access token available");
-        return;
-      }
-
-      // Get conversations list from server
-      const response = await fetch(`/api/conversations?userId=${userId}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-
-        if (
-          data.success &&
-          data.conversations &&
-          Array.isArray(data.conversations)
-        ) {
-          setConversations(data.conversations);
-        }
-      } else {
-        console.error("Failed to fetch conversations from server");
-      }
-    } catch (error) {
-      console.error("Error fetching conversations from server:", error);
-    }
-  };
 
   // Create new conversation
   const createNewConversation = () => {
@@ -88,54 +36,48 @@ export default function ChatDefaultPage() {
   };
 
   return (
-    <Box h="100%" p={4} className="chat-page-container">
-      <VStack gap={6} align="center" justify="center" h="100%">
-        <Heading
-          size="lg"
-          mb={6}
-          color={colorMode === "dark" ? "white" : "black"}
-        >
-          All Conversations
-        </Heading>
+    <Box h="100%" p={8} className="chat-page-container">
+      <VStack gap={8} align="center" justify="center" h="100%">
+        <VStack gap={4} align="center">
+          <Heading
+            size="2xl"
+            fontWeight="bold"
+            color={colorMode === "dark" ? "white" : "black"}
+            textAlign="center"
+          >
+            Welcome to MindPulse
+          </Heading>
+
+          <Text
+            fontSize="lg"
+            color="gray.500"
+            textAlign="center"
+            maxW="lg"
+            lineHeight="tall"
+          >
+            Your AI tutor is waiting. Let's start a conversation.
+          </Text>
+        </VStack>
 
         <Button
           colorScheme="blue"
-          mb={6}
           onClick={createNewConversation}
-          bg="blue.600"
-          _hover={{ bg: "blue.500" }}
+          size="lg"
+          px={8}
+          py={6}
+          fontSize="lg"
+          fontWeight="semibold"
+          borderRadius="xl"
+          _hover={{
+            transform: "translateY(-2px)",
+            boxShadow: "lg",
+          }}
+          transition="all 0.2s"
         >
           Start New Conversation
         </Button>
 
-        {isLoading ? (
-          <Text color="gray.300">Loading conversations...</Text>
-        ) : conversations.length === 0 ? (
-          <Text color="gray.300">No conversations found. Start a new one!</Text>
-        ) : (
-          <VStack align="stretch" gap={3}>
-            {conversations.map((conversation) => (
-              <Flex
-                key={conversation.id}
-                p={4}
-                borderWidth="1px"
-                borderRadius="md"
-                borderColor="gray.700"
-                alignItems="center"
-                justifyContent="space-between"
-                cursor="pointer"
-                bg="gray.900"
-                _hover={{ bg: "gray.800" }}
-                onClick={() => router.push(`/chat/${conversation.id}`)}
-              >
-                <Text color="gray.200">{conversation.title}</Text>
-                <Text color="gray.400" fontSize="sm">
-                  Click to open
-                </Text>
-              </Flex>
-            ))}
-          </VStack>
-        )}
+        {isLoading && <Text color="gray.400">Loading...</Text>}
       </VStack>
     </Box>
   );
