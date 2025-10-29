@@ -2,7 +2,7 @@
 
 import { Box, Flex, Heading, Text } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
-import { getCurrentUser } from "@/utils/supabase-client";
+import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import ConversationSidebar from "@/components/ConversationSidebar";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
@@ -33,9 +33,19 @@ export default function ChatLayout({
 
       if (user?.id) {
         try {
+          // include auth token for RLS
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
           const response = await fetch(`/api/conversations?userId=${user.id}`, {
             method: "GET",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(session?.access_token
+                ? { Authorization: `Bearer ${session.access_token}` }
+                : {}),
+            },
           });
 
           if (response.ok) {

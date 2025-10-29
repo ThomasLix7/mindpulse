@@ -50,8 +50,8 @@ export async function GET(request: Request) {
 
     const accessToken = authHeader.substring(7); // Remove "Bearer " prefix
 
-    // Create server client with user context
-    const supabase = await createServerClient();
+    // Create server client with user context so RLS uses auth.uid()
+    const supabase = await createServerClient(accessToken);
 
     // Set the user session using the access token
     const {
@@ -354,8 +354,8 @@ export async function POST(request: Request) {
 
     const accessToken = authHeader.substring(7);
 
-    // Create server client with user context
-    const supabase = await createServerClient();
+    // Create server client with user context so RLS uses auth.uid()
+    const supabase = await createServerClient(accessToken);
 
     // Set the user session using the access token
     const {

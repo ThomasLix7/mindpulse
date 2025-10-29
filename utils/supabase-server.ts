@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { headers, cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
-export const createServerClient = () => {
+export const createServerClient = (accessToken?: string) => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -14,6 +14,13 @@ export const createServerClient = () => {
     auth: {
       persistSession: false,
     },
+    global: accessToken
+      ? {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      : undefined,
   });
 };
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Heading, Text, Button, VStack, Flex } from "@chakra-ui/react";
-import { getCurrentUser } from "@/utils/supabase-client";
+import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { useColorMode } from "@/components/ui/color-mode";
 
 interface Conversation {
@@ -34,7 +34,7 @@ export default function ChatDefaultPage() {
         return;
       }
 
-      // Load from database for authenticated users
+      // Fetch immediately with current session
       await fetchConversationsFromServer(currentUser.id);
       setIsLoading(false);
     };
@@ -45,10 +45,23 @@ export default function ChatDefaultPage() {
   // Fetch conversations from server for logged-in users
   const fetchConversationsFromServer = async (userId: string) => {
     try {
+      // Get the session token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        console.error("No access token available");
+        return;
+      }
+
       // Get conversations list from server
       const response = await fetch(`/api/conversations?userId=${userId}`, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (response.ok) {
