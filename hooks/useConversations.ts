@@ -48,7 +48,7 @@ export function useConversations(
         setAuthChecked(true);
 
         // Load conversations from localStorage or server
-        if (conversationId === "new") {
+        if (conversationId === "new" || !conversationId) {
           setHistoryLoading(false);
           return;
         }

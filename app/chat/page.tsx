@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Heading, Text, Button, VStack } from "@chakra-ui/react";
-import { getCurrentUser } from "@/utils/supabase-client";
+import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { useColorMode } from "@/components/ui/color-mode";
 
 export default function ChatDefaultPage() {
@@ -30,9 +30,46 @@ export default function ChatDefaultPage() {
     checkAuth();
   }, [router]);
 
-  // Create new conversation
-  const createNewConversation = () => {
-    router.push("/chat/new");
+  // Create new conversation directly
+  const createNewConversation = async () => {
+    if (!user?.id) return;
+
+    try {
+      // Get user's access token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        console.error("No access token available");
+        return;
+      }
+
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          title: "New Conversation",
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.conversation) {
+          // Navigate directly to the new conversation
+          router.push(`/chat/${data.conversation.id}`);
+        }
+      } else {
+        console.error("Failed to create conversation");
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+    }
   };
 
   return (

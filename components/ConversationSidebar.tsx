@@ -3,6 +3,7 @@
 import { Box, Button, Text, Stack, Spinner } from "@chakra-ui/react";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
+import { supabase } from "@/utils/supabase-client";
 
 interface ConversationSidebarProps {
   conversations: any[];
@@ -32,9 +33,45 @@ export default function ConversationSidebar({
     router.push(`/chat/${id}`);
   };
 
-  const createNewConversation = () => {
-    ("ConversationSidebar: Requesting new conversation");
-    router.push("/chat/new");
+  const createNewConversation = async () => {
+    if (!userId) return;
+
+    try {
+      // Get user's access token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        console.error("No access token available");
+        return;
+      }
+
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          userId: userId,
+          title: "New Conversation",
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.conversation) {
+          // Navigate directly to the new conversation
+          router.push(`/chat/${data.conversation.id}`);
+        }
+      } else {
+        console.error("Failed to create conversation");
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+    }
   };
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
