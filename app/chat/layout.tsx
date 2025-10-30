@@ -111,9 +111,19 @@ export default function ChatLayout({
     // For logged-in users, delete on the server
     if (user?.id) {
       try {
+        // include auth token for RLS
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
         await fetch(`/api/conversations?id=${id}&userId=${user.id}`, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
+          },
         });
       } catch (error) {
         console.error("Error deleting conversation on server:", error);

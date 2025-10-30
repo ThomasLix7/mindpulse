@@ -477,8 +477,38 @@ export async function DELETE(request: Request) {
       );
     }
 
+    // Get access token from Authorization header
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authorization token required" },
+        { status: 401 }
+      );
+    }
+
+    const accessToken = authHeader.substring(7);
+
+    // Create server client with user context so RLS uses auth.uid()
+    const supabase = await createServerClient(accessToken);
+
+    // Validate token user matches provided userId
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(accessToken);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid access token" },
+        { status: 401 }
+      );
+    }
+
+    if (user.id !== userId) {
+      return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
+    }
+
     // Verify the user owns this conversation
-    const supabase = await createServerClient();
     const { data: existingConv, error: fetchError } = await supabase
       .from("conversations")
       .select("id")
