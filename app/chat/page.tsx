@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Heading, Text, Button, VStack } from "@chakra-ui/react";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
+import { apiFetch } from "@/utils/api-fetch";
 import { useColorMode } from "@/components/ui/color-mode";
 
 export default function ChatDefaultPage() {
@@ -46,12 +47,8 @@ export default function ChatDefaultPage() {
         return;
       }
 
-      const response = await fetch("/api/conversations", {
+      const response = await apiFetch("/api/conversations", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: JSON.stringify({
           userId: user.id,
           title: "New Conversation",

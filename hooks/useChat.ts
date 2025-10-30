@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/utils/supabase-client";
+import { apiFetch } from "@/utils/api-fetch";
 
 interface UseChatProps {
   conversations: any[];
@@ -69,9 +70,8 @@ export function useChat({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await apiFetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage,
           conversationId: conversationId,

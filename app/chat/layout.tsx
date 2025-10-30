@@ -3,6 +3,7 @@
 import { Box, Flex, Heading, Text } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
+import { apiFetch } from "@/utils/api-fetch";
 import ConversationSidebar from "@/components/ConversationSidebar";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
@@ -38,15 +39,12 @@ export default function ChatLayout({
             data: { session },
           } = await supabase.auth.getSession();
 
-          const response = await fetch(`/api/conversations?userId=${user.id}`, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              ...(session?.access_token
-                ? { Authorization: `Bearer ${session.access_token}` }
-                : {}),
-            },
-          });
+          const response = await apiFetch(
+            `/api/conversations?userId=${user.id}`,
+            {
+              method: "GET",
+            }
+          );
 
           if (response.ok) {
             const data = await response.json();
@@ -112,18 +110,8 @@ export default function ChatLayout({
     if (user?.id) {
       try {
         // include auth token for RLS
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        await fetch(`/api/conversations?id=${id}&userId=${user.id}`, {
+        await apiFetch(`/api/conversations?id=${id}&userId=${user.id}`, {
           method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            ...(session?.access_token
-              ? { Authorization: `Bearer ${session.access_token}` }
-              : {}),
-          },
         });
       } catch (error) {
         console.error("Error deleting conversation on server:", error);

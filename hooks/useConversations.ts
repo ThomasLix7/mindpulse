@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
+import { apiFetch } from "@/utils/api-fetch";
 import { Conversation } from "@/types/chat";
 
 function generateConversationId(): string {
@@ -120,12 +121,8 @@ export function useConversations(
       }
 
       // Get conversation list without history
-      const response = await fetch(`/api/conversations?userId=${userId}`, {
+      const response = await apiFetch(`/api/conversations?userId=${userId}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
       });
 
       if (response.ok) {
@@ -187,12 +184,8 @@ export function useConversations(
         throw new Error("No access token available");
       }
 
-      const serverResponse = await fetch("/api/conversations", {
+      const serverResponse = await apiFetch("/api/conversations", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: JSON.stringify({
           userId: user.id,
           title: defaultTitle,
@@ -240,9 +233,8 @@ export function useConversations(
     // Update on server for logged-in users
     if (user?.id) {
       try {
-        await fetch("/api/conversations", {
+        await apiFetch("/api/conversations", {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id,
             title: newTitle,
@@ -276,9 +268,8 @@ export function useConversations(
     // Delete on server for logged-in users
     if (user?.id) {
       try {
-        await fetch(`/api/conversations?id=${id}&userId=${user.id}`, {
+        await apiFetch(`/api/conversations?id=${id}&userId=${user.id}`, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
         console.error("Error deleting conversation on server:", error);
@@ -472,15 +463,11 @@ export function useConversations(
             throw new Error("No access token available");
           }
 
-          const response = await fetch(
+          const response = await apiFetch(
             `/api/conversations?userId=${encodeURIComponent(
               user.id
             )}&conversationId=${encodeURIComponent(conversationId)}`,
-            {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
+            {}
           );
 
           if (!response.ok) {

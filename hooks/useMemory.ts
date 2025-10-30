@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiFetch } from "@/utils/api-fetch";
 import { Conversation } from "@/types/chat";
 
 function isLongtermMemory(item: any): boolean {
@@ -45,9 +46,8 @@ export function useMemory({
 
     try {
       // Get the memory ID for this message
-      const findMemoryResponse = await fetch("/api/memory", {
+      const findMemoryResponse = await apiFetch("/api/memory", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: conversationId,
           userMessage: message.user,
@@ -81,9 +81,8 @@ export function useMemory({
         user.id
       )}&memoryId=${encodeURIComponent(findData.memoryId)}`;
 
-      const response = await fetch(deleteUrl, {
+      const response = await apiFetch(deleteUrl, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
       });
 
       // Handle response
@@ -168,9 +167,8 @@ export function useMemory({
 
     try {
       // Get the memory ID for this message
-      const findMemoryResponse = await fetch("/api/memory", {
+      const findMemoryResponse = await apiFetch("/api/memory", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: conversationId,
           userMessage: message.user,
@@ -199,9 +197,8 @@ export function useMemory({
       }
 
       // Use the memory endpoint to promote it
-      const response = await fetch("/api/memory", {
+      const response = await apiFetch("/api/memory", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           memoryId: findData.memoryId,
           userId: user.id,

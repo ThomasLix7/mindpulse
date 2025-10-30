@@ -4,6 +4,7 @@ import { Box, Button, Text, Stack, Spinner } from "@chakra-ui/react";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
 import { supabase } from "@/utils/supabase-client";
+import { apiFetch } from "@/utils/api-fetch";
 
 interface ConversationSidebarProps {
   conversations: any[];
@@ -48,12 +49,8 @@ export default function ConversationSidebar({
         return;
       }
 
-      const response = await fetch("/api/conversations", {
+      const response = await apiFetch("/api/conversations", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: JSON.stringify({
           userId: userId,
           title: "New Conversation",
