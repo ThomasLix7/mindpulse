@@ -9,10 +9,18 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const googleApiKey = process.env.GOOGLE_API_KEY;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 
-export async function getVectorStore() {
+export async function getVectorStore(accessToken?: string) {
   try {
     // Create a Supabase client
-    const client = createClient(supabaseUrl, supabaseKey);
+    const client = createClient(supabaseUrl, supabaseKey, {
+      global: accessToken
+        ? {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        : undefined,
+    });
 
     // Test the client connection
     const { data, error } = await client.from("profiles").select("id").limit(1);

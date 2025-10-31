@@ -3,6 +3,7 @@ import { model } from "@/lib/gemini";
 import { webTools } from "@/tools/webSearch";
 import { saveMemory, recallMemory } from "@/utils/memory";
 import { createServerClient } from "@/utils/supabase-server";
+import { getVectorStore } from "@/lib/vectorstore";
 
 export const maxDuration = 30;
 
@@ -23,9 +24,12 @@ function updateConversationHistory(
   conversationHistory.set(conversationId, history);
 }
 
-async function updateConversationTimestamp(conversationId: string) {
+async function updateConversationTimestamp(
+  conversationId: string,
+  accessToken?: string
+) {
   try {
-    const supabase = await createServerClient();
+    const supabase = await createServerClient(accessToken);
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
@@ -65,7 +69,7 @@ export async function POST(req: Request) {
     const accessToken = authHeader.substring(7);
 
     // Create server client with user context
-    const supabase = await createServerClient();
+    const supabase = await createServerClient(accessToken);
 
     // Set the user session using the access token
     const {
@@ -87,6 +91,19 @@ export async function POST(req: Request) {
 
     let validatedUserId = userId;
 
+    // Save the user's message to conversation_messages immediately
+    try {
+      await supabase.from("conversation_messages").insert({
+        conversation_id: conversationId,
+        role: "user",
+        content: message,
+        message_type: "text",
+      });
+    } catch (msgErr) {
+      console.error("Error inserting user message:", msgErr);
+      // continue; not critical for generating response
+    }
+
     // Retrieve relevant memories for this user and query
     let relevantMemories = "";
     try {
@@ -101,7 +118,8 @@ export async function POST(req: Request) {
       const memories = await recallMemory(
         conversationId,
         message,
-        validatedUserId
+        validatedUserId,
+        accessToken
       );
 
       // For personal information queries, also directly check long-term memories
@@ -111,7 +129,8 @@ export async function POST(req: Request) {
           const { recallLongTermMemory } = await import("@/utils/memory");
           longTermMemories = await recallLongTermMemory(
             validatedUserId,
-            message
+            message,
+            accessToken
           );
           console.log(
             `Also checked long-term memories directly, found ${longTermMemories.length}`
@@ -261,11 +280,40 @@ export async function POST(req: Request) {
     // Create a stream
     const stream = new ReadableStream({
       async start(controller) {
-        // Enhance the message with both memories and web search results
         const systemContext = `You are a helpful AI assistant that remembers past conversations to provide more personalized responses.`;
+
+        // Get learning path summary
+        let learningPathSummary = "";
+        try {
+          const vectorStore = await getVectorStore(accessToken);
+          if (vectorStore && "from" in vectorStore) {
+            const { data: summaryData } = await vectorStore
+              .from("ai_memories")
+              .select("content")
+              .eq("conversation_id", conversationId)
+              .eq("user_id", validatedUserId)
+              .eq("is_longterm", false)
+              .filter("metadata->>'type'", "eq", "learning_path_summary")
+              .limit(1)
+              .single();
+
+            if (summaryData) {
+              learningPathSummary = summaryData.content;
+              console.log("Retrieved learning path summary for conversation");
+            }
+          }
+        } catch (error) {
+          console.error("Error retrieving learning path summary:", error);
+        }
 
         const enhancedMessage = `${systemContext}
         
+${
+  learningPathSummary
+    ? `\nLearning Path Context for this conversation:\n${learningPathSummary}\n\n`
+    : ""
+}
+
 ${relevantMemories ? relevantMemories : ""}
 
 ${message}
@@ -290,36 +338,60 @@ ${
           }
         }
 
-        // Update conversation history after the full response is received
         updateConversationHistory(conversationId, message, fullResponse);
 
-        // Save the conversation to memory
         try {
-          console.log(`Saving message to conversation: ${conversationId}`);
-          const success = await saveMemory(
-            conversationId,
-            message,
-            fullResponse,
-            validatedUserId,
-            isLongTerm
-          );
-          if (success) {
-            console.log(
-              `Memory saved successfully for conversation: ${conversationId}${
-                isLongTerm ? " (as long-term)" : ""
-              }`
-            );
+          await supabase.from("conversation_messages").insert({
+            conversation_id: conversationId,
+            role: "assistant",
+            content: fullResponse,
+            message_type: "text",
+          });
+        } catch (assistErr) {
+          console.error("Error inserting assistant message:", assistErr);
+        }
 
-            // Update the conversation's timestamp
-            await updateConversationTimestamp(conversationId);
-          } else {
-            console.warn(
-              `Memory could not be saved for conversation: ${conversationId}`
+        // Save memory: long-term only (short-term uses summaries)
+        try {
+          if (isLongTerm && validatedUserId) {
+            const { saveMemory } = await import("@/utils/memory");
+            const success = await saveMemory(
+              conversationId,
+              message,
+              fullResponse,
+              validatedUserId,
+              true,
+              accessToken
+            );
+            if (success) {
+              console.log(
+                `Long-term memory saved for conversation: ${conversationId}`
+              );
+            }
+          }
+
+          // Update summary every 20 messages
+          const { count } = await supabase
+            .from("conversation_messages")
+            .select("*", { count: "exact", head: true })
+            .eq("conversation_id", conversationId);
+
+          const messageCount = count || 0;
+          const shouldUpdateSummary =
+            messageCount === 1 || messageCount % 20 === 0;
+
+          if (shouldUpdateSummary && validatedUserId) {
+            const { saveLearningPathSummary } = await import("@/utils/memory");
+            await saveLearningPathSummary(
+              conversationId,
+              validatedUserId,
+              accessToken
             );
           }
+
+          await updateConversationTimestamp(conversationId, accessToken);
         } catch (error) {
-          console.error("Error saving memory, continuing anyway:", error);
-          // Continue even if memory saving fails
+          console.error("Error saving memory:", error);
         }
 
         controller.close();
