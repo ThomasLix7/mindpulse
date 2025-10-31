@@ -1,74 +1,47 @@
--- Learning System
--- Concept management and learning features
-
--- Concept Management
-CREATE TABLE concepts (
+CREATE TABLE courses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  learning_path_id UUID REFERENCES learning_paths(id) ON DELETE CASCADE NOT NULL,
+  title TEXT NOT NULL,
   description TEXT,
-  concept_type TEXT NOT NULL, -- 'fact', 'procedure', 'principle', 'skill'
-  abstraction_level INTEGER DEFAULT 1, -- 1-10 (concrete to abstract)
-  complexity INTEGER DEFAULT 1, -- 1-10 (simple to complex)
-  difficulty_rating INTEGER DEFAULT 1, -- 1-10
-  learning_objectives JSONB,
-  assessment_criteria JSONB,
-  metadata JSONB, -- Additional flexible data
+  course_order INTEGER DEFAULT 0,
+  curriculum JSONB NOT NULL DEFAULT '{"modules": []}'::jsonb,
+  current_module_index INTEGER DEFAULT 0,
+  current_lesson_index INTEGER DEFAULT 0,
+  current_topic_index INTEGER DEFAULT 0,
+  current_topic_id TEXT,
+  completed_topic_ids JSONB DEFAULT '[]'::jsonb,
+  estimated_duration_hours INTEGER,
+  status TEXT DEFAULT 'active',
+  progress_percentage INTEGER DEFAULT 0,
+  completion_date TIMESTAMP WITH TIME ZONE,
+  skills_mastered JSONB DEFAULT '[]'::jsonb,
+  metadata JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
-CREATE TABLE concept_prerequisites (
+CREATE TABLE course_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  concept_id UUID REFERENCES concepts(id) ON DELETE CASCADE,
-  prerequisite_concept_id UUID REFERENCES concepts(id) ON DELETE CASCADE,
-  prerequisite_type TEXT DEFAULT 'required', -- 'required', 'recommended', 'helpful'
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  UNIQUE(concept_id, prerequisite_concept_id)
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  message_type TEXT DEFAULT 'text',
+  metadata JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
-CREATE TABLE user_concept_mastery (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  concept_id UUID REFERENCES concepts(id) ON DELETE CASCADE,
-  mastery_level INTEGER DEFAULT 1, -- 1-10 scale
-  last_practiced TIMESTAMP WITH TIME ZONE,
-  times_practiced INTEGER DEFAULT 0,
-  success_rate DECIMAL DEFAULT 0.0, -- 0.0 to 1.0
-  confidence_level DECIMAL DEFAULT 0.0, -- 0.0 to 1.0
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  UNIQUE(user_id, concept_id)
-);
-
--- Indexes
-CREATE INDEX idx_concepts_subject_id ON concepts(subject_id);
-CREATE INDEX idx_concept_prerequisites_concept_id ON concept_prerequisites(concept_id);
-CREATE INDEX idx_user_concept_mastery_user_id ON user_concept_mastery(user_id);
-
--- Row Level Security
-ALTER TABLE concepts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE concept_prerequisites ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_concept_mastery ENABLE ROW LEVEL SECURITY;
-
--- RLS Policies
-CREATE POLICY "Users can access concepts" ON concepts FOR SELECT USING (true);
-CREATE POLICY "Users can access concept prerequisites" ON concept_prerequisites FOR SELECT USING (true);
-CREATE POLICY "Users can access their own concept mastery" ON user_concept_mastery FOR ALL USING (auth.uid() = user_id);
-
-
--- Basic Assessments
 CREATE TABLE assessments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  learning_goal_id UUID REFERENCES learning_goals(id) ON DELETE CASCADE,
-  assessment_type TEXT NOT NULL, -- 'diagnostic', 'formative', 'summative'
-  status TEXT DEFAULT 'in_progress', -- 'in_progress', 'completed', 'abandoned'
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  assessment_type TEXT NOT NULL,
+  status TEXT DEFAULT 'in_progress',
   total_items INTEGER,
   completed_items INTEGER DEFAULT 0,
   overall_score DECIMAL,
-  confidence_level DECIMAL, -- 1-10 scale
-  time_spent INTEGER, -- seconds
+  confidence_level DECIMAL,
+  time_spent INTEGER,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   completed_at TIMESTAMP WITH TIME ZONE
 );
@@ -77,58 +50,203 @@ CREATE TABLE assessment_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   assessment_id UUID REFERENCES assessments(id) ON DELETE CASCADE,
   item_order INTEGER NOT NULL,
-  item_type TEXT NOT NULL, -- 'multiple_choice', 'open_ended', 'problem_solving'
+  item_type TEXT NOT NULL,
   question_text TEXT NOT NULL,
   correct_answer TEXT,
   user_answer TEXT,
   is_correct BOOLEAN,
-  confidence_score DECIMAL, -- 1-10 scale
-  response_time INTEGER, -- milliseconds
-  error_type TEXT, -- 'conceptual', 'procedural', 'careless'
-  concept_id UUID,
-  difficulty_level TEXT, -- 'easy', 'medium', 'hard'
+  confidence_score DECIMAL,
+  response_time INTEGER,
+  error_type TEXT,
+  level TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Learning Progress
 CREATE TABLE learning_progress (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  concept_id UUID,
-  learning_goal_id UUID REFERENCES learning_goals(id) ON DELETE CASCADE,
-  progress_type TEXT NOT NULL, -- 'lesson', 'practice', 'assessment', 'review'
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  progress_type TEXT NOT NULL,
   title TEXT NOT NULL,
   description TEXT,
-  status TEXT DEFAULT 'pending', -- 'pending', 'in_progress', 'completed', 'skipped'
+  status TEXT DEFAULT 'pending',
   completed_at TIMESTAMP WITH TIME ZONE,
-  time_spent INTEGER, -- minutes
-  score DECIMAL, -- 0-100
+  time_spent INTEGER,
+  score DECIMAL,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Indexes
+CREATE INDEX idx_courses_user_id ON courses(user_id);
+CREATE INDEX idx_courses_learning_path_id ON courses(learning_path_id);
+CREATE INDEX idx_courses_status ON courses(status);
+CREATE INDEX idx_courses_course_order ON courses(learning_path_id, course_order);
+CREATE INDEX idx_course_messages_course_id ON course_messages(course_id);
 CREATE INDEX idx_assessments_user_id ON assessments(user_id);
-CREATE INDEX idx_assessments_goal_id ON assessments(learning_goal_id);
+CREATE INDEX idx_assessments_course_id ON assessments(course_id);
 CREATE INDEX idx_assessment_items_assessment_id ON assessment_items(assessment_id);
 CREATE INDEX idx_learning_progress_user_id ON learning_progress(user_id);
-CREATE INDEX idx_learning_progress_concept_id ON learning_progress(concept_id);
+CREATE INDEX idx_learning_progress_course_id ON learning_progress(course_id);
 
--- Row Level Security
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assessment_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE learning_progress ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies
+CREATE POLICY "Users can access their own courses" ON courses FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can access their own course messages" ON course_messages FOR ALL USING (auth.uid() = (SELECT user_id FROM courses WHERE id = course_id));
 CREATE POLICY "Users can access their own assessments" ON assessments FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can access their own assessment items" ON assessment_items FOR ALL USING (auth.uid() = (SELECT user_id FROM assessments WHERE id = assessment_id));
 CREATE POLICY "Users can access their own learning progress" ON learning_progress FOR ALL USING (auth.uid() = user_id);
 
-ALTER TABLE learning_progress 
-ADD CONSTRAINT fk_learning_progress_concept_id 
-FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE;
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-ALTER TABLE assessment_items 
-ADD CONSTRAINT fk_assessment_items_concept_id 
-FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE SET NULL;
+DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
+CREATE TRIGGER update_courses_updated_at
+BEFORE UPDATE ON courses
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE OR REPLACE FUNCTION update_learning_path_on_course_completion()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status = 'completed' AND OLD.status != 'completed' AND NEW.learning_path_id IS NOT NULL THEN
+    UPDATE learning_paths
+    SET 
+      completed_courses_count = completed_courses_count + 1,
+      active_courses_count = GREATEST(0, active_courses_count - 1),
+      overall_progress = (
+        SELECT COALESCE(AVG(progress_percentage), 0)::INTEGER
+        FROM courses
+        WHERE learning_path_id = NEW.learning_path_id
+      ),
+      updated_at = NOW()
+    WHERE id = NEW.learning_path_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_course_completion
+AFTER UPDATE ON courses
+FOR EACH ROW
+WHEN (NEW.status = 'completed' AND OLD.status != 'completed')
+EXECUTE FUNCTION update_learning_path_on_course_completion();
+
+CREATE OR REPLACE FUNCTION update_learning_path_course_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.learning_path_id IS NOT NULL THEN
+    UPDATE learning_paths
+    SET 
+      active_courses_count = (
+        SELECT COUNT(*)
+        FROM courses
+        WHERE learning_path_id = NEW.learning_path_id 
+          AND status = 'active'
+      ),
+      updated_at = NOW()
+    WHERE id = NEW.learning_path_id;
+  END IF;
+  IF OLD.learning_path_id IS NOT NULL AND (OLD.learning_path_id != NEW.learning_path_id OR NEW.learning_path_id IS NULL) THEN
+    UPDATE learning_paths
+    SET 
+      active_courses_count = (
+        SELECT COUNT(*)
+        FROM courses
+        WHERE learning_path_id = OLD.learning_path_id 
+          AND status = 'active'
+      ),
+      updated_at = NOW()
+    WHERE id = OLD.learning_path_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_course_status_change
+AFTER INSERT OR UPDATE ON courses
+FOR EACH ROW
+EXECUTE FUNCTION update_learning_path_course_count();
+
+CREATE OR REPLACE FUNCTION sync_skills_to_user_skills()
+RETURNS TRIGGER AS $$
+DECLARE
+  skill_record JSONB;
+BEGIN
+  IF NEW.status = 'completed' AND OLD.status != 'completed' AND NEW.skills_mastered IS NOT NULL THEN
+    FOR skill_record IN SELECT * FROM jsonb_array_elements(NEW.skills_mastered)
+    LOOP
+      INSERT INTO user_skills (user_id, skill_name, proficiency_level, category, last_updated)
+      VALUES (
+        NEW.user_id,
+        skill_record->>'name',
+        COALESCE(skill_record->>'proficiency', 'intermediate'),
+        COALESCE(skill_record->>'category', 'technical'),
+        NOW()
+      )
+      ON CONFLICT (user_id, skill_name) DO UPDATE
+      SET 
+        proficiency_level = CASE 
+          WHEN skill_record->>'proficiency' = 'expert' THEN 'expert'
+          WHEN skill_record->>'proficiency' = 'advanced' AND user_skills.proficiency_level != 'expert' THEN 'advanced'
+          WHEN skill_record->>'proficiency' = 'intermediate' AND user_skills.proficiency_level IN ('beginner', 'intermediate') THEN 'intermediate'
+          ELSE user_skills.proficiency_level
+        END,
+        last_updated = NOW();
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_course_complete_sync_skills
+AFTER UPDATE ON courses
+FOR EACH ROW
+WHEN (NEW.status = 'completed' AND OLD.status != 'completed')
+EXECUTE FUNCTION sync_skills_to_user_skills();
+
+CREATE OR REPLACE FUNCTION get_current_topic(course_id_param UUID)
+RETURNS JSONB AS $$
+DECLARE
+  path_record RECORD;
+  current_topic JSONB;
+  module_obj JSONB;
+  lesson_obj JSONB;
+BEGIN
+  SELECT curriculum, current_module_index, current_lesson_index, current_topic_index
+  INTO path_record
+  FROM courses
+  WHERE id = course_id_param;
+
+  IF path_record IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF path_record.curriculum->'modules' IS NOT NULL AND 
+     jsonb_array_length(path_record.curriculum->'modules') > path_record.current_module_index THEN
+    module_obj := path_record.curriculum->'modules'->path_record.current_module_index;
+    
+    IF module_obj->'lessons' IS NOT NULL AND 
+       jsonb_array_length(module_obj->'lessons') > path_record.current_lesson_index THEN
+      lesson_obj := module_obj->'lessons'->path_record.current_lesson_index;
+      
+      IF lesson_obj->'topics' IS NOT NULL AND 
+         jsonb_array_length(lesson_obj->'topics') > path_record.current_topic_index THEN
+        current_topic := lesson_obj->'topics'->path_record.current_topic_index;
+        RETURN current_topic;
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;

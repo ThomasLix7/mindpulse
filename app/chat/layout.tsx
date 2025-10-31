@@ -4,11 +4,11 @@ import { Box, Flex, Heading, Text } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
-import ConversationSidebar from "@/components/ConversationSidebar";
+import CourseSidebar from "@/components/ConversationSidebar";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
 
-interface Conversation {
+interface Course {
   id: string;
   title: string;
   history?: Array<{ user: string; ai: string }>;
@@ -23,12 +23,12 @@ export default function ChatLayout({
   const pathname = usePathname();
   const { colorMode } = useColorMode();
   const [user, setUser] = useState<any>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load user and conversations
+  // Load user and courses
   useEffect(() => {
-    async function loadUserAndConversations() {
+    async function loadUserAndCourses() {
       const { user } = await getCurrentUser();
       setUser(user);
 
@@ -39,32 +39,27 @@ export default function ChatLayout({
             data: { session },
           } = await supabase.auth.getSession();
 
-          const response = await apiFetch(
-            `/api/conversations?userId=${user.id}`,
-            {
-              method: "GET",
-            }
-          );
+          const response = await apiFetch(`/api/courses?userId=${user.id}`, {
+            method: "GET",
+          });
 
           if (response.ok) {
             const data = await response.json();
-            if (data.success && data.conversations) {
-              setConversations(data.conversations);
+            if (data.success && data.courses) {
+              setCourses(data.courses);
             }
           }
         } catch (error) {
-          console.error("Error loading conversations:", error);
+          console.error("Error loading courses:", error);
         }
       } else {
         // For non-logged in users, load from localStorage
-        const storedConversations = localStorage.getItem(
-          "mindpulse-conversations"
-        );
-        if (storedConversations) {
+        const storedCourses = localStorage.getItem("mindpulse-courses");
+        if (storedCourses) {
           try {
-            setConversations(JSON.parse(storedConversations));
+            setCourses(JSON.parse(storedCourses));
           } catch (e) {
-            console.error("Error parsing stored conversations:", e);
+            console.error("Error parsing stored courses:", e);
           }
         }
       }
@@ -72,80 +67,78 @@ export default function ChatLayout({
       setIsLoading(false);
     }
 
-    loadUserAndConversations();
+    loadUserAndCourses();
 
-    // Listen for conversation creation events
-    const handleNewConversation = (event: any) => {
-      setConversations((prev) => {
-        // Check if conversation already exists to avoid duplicates
-        if (prev.some((conv: any) => conv.id === event.detail.id)) {
+    // Listen for course creation events
+    const handleNewCourse = (event: any) => {
+      setCourses((prev) => {
+        // Check if course already exists to avoid duplicates
+        if (prev.some((course: any) => course.id === event.detail.id)) {
           return prev;
         }
         return [event.detail, ...prev];
       });
     };
 
-    // Add event listener for conversation created
-    window.addEventListener("conversation-created", handleNewConversation);
+    // Add event listener for course created
+    window.addEventListener("course-created", handleNewCourse);
 
     // Cleanup
     return () => {
-      window.removeEventListener("conversation-created", handleNewConversation);
+      window.removeEventListener("course-created", handleNewCourse);
     };
   }, []);
 
-  // Handle conversation deletion
-  const deleteConversation = async (id: string) => {
-    // Get current conversation ID from URL
-    const currentConversationId = pathname.split("/").pop();
-    const isCurrentConversation = id === currentConversationId;
+  // Handle course deletion
+  const deleteCourse = async (id: string) => {
+    // Get current course ID from URL
+    const currentCourseId = pathname.split("/").pop();
+    const isCurrentCourse = id === currentCourseId;
 
-    // Store conversations before updating state
-    const currentConversations = [...conversations];
+    // Store courses before updating state
+    const currentCourses = [...courses];
 
-    // Remove conversation from state immediately for responsive UI
-    setConversations((prev) => prev.filter((conv) => conv.id !== id));
+    // Remove course from state immediately for responsive UI
+    setCourses((prev) => prev.filter((course) => course.id !== id));
 
     // For logged-in users, delete on the server
     if (user?.id) {
       try {
         // include auth token for RLS
-        await apiFetch(`/api/conversations?id=${id}&userId=${user.id}`, {
+        await apiFetch(`/api/courses?id=${id}&userId=${user.id}`, {
           method: "DELETE",
         });
       } catch (error) {
-        console.error("Error deleting conversation on server:", error);
+        console.error("Error deleting course on server:", error);
       }
     } else {
       // For anonymous users, update localStorage
-      const storedConversations = localStorage.getItem(
-        "mindpulse-conversations"
-      );
-      if (storedConversations) {
+      const storedCourses = localStorage.getItem("mindpulse-courses");
+      if (storedCourses) {
         try {
-          const parsedConversations = JSON.parse(storedConversations);
-          const updatedConversations = parsedConversations.filter(
-            (conv: any) => conv.id !== id
+          const parsedCourses = JSON.parse(storedCourses);
+          const updatedCourses = parsedCourses.filter(
+            (course: any) => course.id !== id
           );
           localStorage.setItem(
-            "mindpulse-conversations",
-            JSON.stringify(updatedConversations)
+            "mindpulse-courses",
+            JSON.stringify(updatedCourses)
           );
         } catch (e) {
-          console.error("Error updating stored conversations:", e);
+          console.error("Error updating stored courses:", e);
         }
       }
     }
 
-    // If we deleted the current conversation, redirect to a different page
-    if (isCurrentConversation) {
-      const remainingConversations = currentConversations.filter(
-        (conv) => conv.id !== id
+    // If we deleted the current course, redirect to a different page
+    if (isCurrentCourse) {
+      const remainingCourses = currentCourses.filter(
+        (course) => course.id !== id
       );
 
-      if (remainingConversations.length > 0) {
-        const nextConversation = remainingConversations[0];
-        router.push(`/chat/${nextConversation.id}`);
+      if (remainingCourses.length > 0) {
+        const nextCourse = remainingCourses[0];
+        router.push(`/chat/${nextCourse.id}`);
       } else {
         router.push("/chat");
       }
@@ -165,11 +158,11 @@ export default function ChatLayout({
       className="chat-layout-container"
     >
       {/* Persistent Sidebar */}
-      <ConversationSidebar
-        conversations={conversations}
+      <CourseSidebar
+        courses={courses}
         isLoading={isLoading}
         userId={user?.id}
-        onDeleteConversation={deleteConversation}
+        onDeleteCourse={deleteCourse}
       />
 
       {/* Main Content */}

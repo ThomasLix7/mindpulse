@@ -1,9 +1,9 @@
 import { getVectorStore } from "@/lib/vectorstore";
 import { model } from "@/lib/gemini";
 
-// Generate learning path summary from recent conversation messages
-async function generateLearningPathSummary(
-  conversationId: string,
+// Generate course summary from recent course messages
+async function generateCourseSummary(
+  courseId: string,
   userId: string,
   accessToken?: string
 ): Promise<string | null> {
@@ -15,9 +15,9 @@ async function generateLearningPathSummary(
 
     // Get last 30 messages for summarization
     const { data: recentMessages, error: msgError } = await vectorStore
-      .from("conversation_messages")
+      .from("course_messages")
       .select("role, content, created_at")
-      .eq("conversation_id", conversationId)
+      .eq("course_id", courseId)
       .order("created_at", { ascending: false })
       .limit(30);
 
@@ -55,20 +55,20 @@ Current Focus: [what we're working on now]`;
 
     return summary;
   } catch (error) {
-    console.error("Error generating learning path summary:", error);
+    console.error("Error generating course summary:", error);
     return null;
   }
 }
 
-// Save/update learning path summary in short-term memory
-export async function saveLearningPathSummary(
-  conversationId: string,
+// Save/update course summary in short-term memory
+export async function saveCourseSummary(
+  courseId: string,
   userId: string,
   accessToken?: string
 ): Promise<boolean> {
   try {
-    const summary = await generateLearningPathSummary(
-      conversationId,
+    const summary = await generateCourseSummary(
+      courseId,
       userId,
       accessToken
     );
@@ -82,29 +82,29 @@ export async function saveLearningPathSummary(
       return false;
     }
 
-    // Check if summary already exists for this conversation
+    // Check if summary already exists for this course
     const { data: existing } = await vectorStore
       .from("ai_memories")
       .select("id")
-      .eq("conversation_id", conversationId)
+      .eq("course_id", courseId)
       .eq("user_id", userId)
       .eq("is_longterm", false)
-      .filter("metadata->>'type'", "eq", "learning_path_summary")
+      .filter("metadata->>'type'", "eq", "course_summary")
       .limit(1)
       .single();
 
     const summaryData = {
       content: summary,
       metadata: {
-        conversationId: conversationId,
+        courseId: courseId,
         userId: userId,
         isLongterm: false,
-        type: "learning_path_summary",
+        type: "course_summary",
         timestamp: Date.now(),
         created_at: new Date().toISOString(),
       },
       is_longterm: false,
-      conversation_id: conversationId,
+      course_id: courseId,
       user_id: userId,
     };
 
@@ -115,12 +115,12 @@ export async function saveLearningPathSummary(
         .eq("id", existing.id);
 
       if (error) {
-        console.error("Error updating learning path summary:", error);
+        console.error("Error updating course summary:", error);
         return false;
       }
       console.log(
-        "Updated learning path summary for conversation:",
-        conversationId
+        "Updated course summary for course:",
+        courseId
       );
     } else {
       const { error } = await vectorStore
@@ -128,18 +128,18 @@ export async function saveLearningPathSummary(
         .insert([summaryData]);
 
       if (error) {
-        console.error("Error saving learning path summary:", error);
+        console.error("Error saving course summary:", error);
         return false;
       }
       console.log(
-        "Saved learning path summary for conversation:",
-        conversationId
+        "Saved course summary for course:",
+        courseId
       );
     }
 
     return true;
   } catch (error) {
-    console.error("Error in saveLearningPathSummary:", error);
+    console.error("Error in saveCourseSummary:", error);
     return false;
   }
 }

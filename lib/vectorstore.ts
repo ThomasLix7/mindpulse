@@ -253,8 +253,15 @@ export async function getVectorStore(accessToken?: string) {
           if (filter) {
             const conditions = [];
 
-            // Handle conversationId filter
-            if ((filter as any).conversationId) {
+            // Handle courseId filter (with backward compatibility for conversationId)
+            if ((filter as any).courseId) {
+              queryBuilder = queryBuilder.filter(
+                "metadata->>courseId",
+                "eq",
+                (filter as any).courseId
+              );
+            } else if ((filter as any).conversationId) {
+              // Backward compatibility
               queryBuilder = queryBuilder.filter(
                 "metadata->>conversationId",
                 "eq",

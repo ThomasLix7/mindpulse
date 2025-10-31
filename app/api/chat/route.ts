@@ -1,41 +1,38 @@
 import { NextResponse } from "next/server";
 import { model } from "@/lib/gemini";
 import { webTools } from "@/tools/webSearch";
-import { saveMemory, recallMemory } from "@/utils/memory";
+import { saveMemory, recallMemory, saveCourseSummary } from "@/utils/memory";
 import { createServerClient } from "@/utils/supabase-server";
 import { getVectorStore } from "@/lib/vectorstore";
 
 export const maxDuration = 30;
 
-const conversationHistory = new Map<string, any[]>();
+const courseHistory = new Map<string, any[]>();
 
-function getConversationHistory(conversationId: string) {
-  return conversationHistory.get(conversationId) || [];
+function getCourseHistory(courseId: string) {
+  return courseHistory.get(courseId) || [];
 }
 
-function updateConversationHistory(
-  conversationId: string,
+function updateCourseHistory(
+  courseId: string,
   userMessage: string,
   aiResponse: string
 ) {
-  const history = getConversationHistory(conversationId);
+  const history = getCourseHistory(courseId);
   history.push({ role: "user", parts: [{ text: userMessage }] });
   history.push({ role: "model", parts: [{ text: aiResponse }] });
-  conversationHistory.set(conversationId, history);
+  courseHistory.set(courseId, history);
 }
 
-async function updateConversationTimestamp(
-  conversationId: string,
-  accessToken?: string
-) {
+async function updateCourseTimestamp(courseId: string, accessToken?: string) {
   try {
     const supabase = await createServerClient(accessToken);
     await supabase
-      .from("conversations")
+      .from("courses")
       .update({ updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
+      .eq("id", courseId);
   } catch (error) {
-    console.error("Error updating conversation timestamp:", error);
+    console.error("Error updating course timestamp:", error);
     // Continue anyway, this is not critical
   }
 }
@@ -44,15 +41,15 @@ export async function POST(req: Request) {
   try {
     const {
       message,
-      conversationId,
+      courseId,
       userId,
       isLongTerm = false,
       enableWebSearch = true,
     } = await req.json();
 
-    if (!message?.trim() || !conversationId?.trim()) {
+    if (!message?.trim() || !courseId?.trim()) {
       return NextResponse.json(
-        { error: "Message and conversation ID are required" },
+        { error: "Message and course ID are required" },
         { status: 400 }
       );
     }
@@ -91,10 +88,10 @@ export async function POST(req: Request) {
 
     let validatedUserId = userId;
 
-    // Save the user's message to conversation_messages immediately
+    // Save the user's message to course_messages immediately
     try {
-      await supabase.from("conversation_messages").insert({
-        conversation_id: conversationId,
+      await supabase.from("course_messages").insert({
+        course_id: courseId,
         role: "user",
         content: message,
         message_type: "text",
@@ -114,9 +111,9 @@ export async function POST(req: Request) {
         message.toLowerCase().includes("about me") ||
         message.toLowerCase().includes("remember me");
 
-      // Get conversation-based and long-term memories
+      // Get course-based and long-term memories
       const memories = await recallMemory(
-        conversationId,
+        courseId,
         message,
         validatedUserId,
         accessToken
@@ -165,7 +162,7 @@ export async function POST(req: Request) {
         );
 
         console.log(
-          `Retrieved ${allMemories.length} total memories (${memories.length} from conversation, ${longTermMemories.length} from long-term storage)`
+          `Retrieved ${allMemories.length} total memories (${memories.length} from course, ${longTermMemories.length} from long-term storage)`
         );
 
         // Log if we found any long-term memories
@@ -199,9 +196,7 @@ export async function POST(req: Request) {
           );
         }
       } else {
-        console.log(
-          `No relevant memories found for conversation: ${conversationId}`
-        );
+        console.log(`No relevant memories found for course: ${courseId}`);
       }
     } catch (error) {
       console.error(
@@ -274,7 +269,7 @@ export async function POST(req: Request) {
 
     const chatSession = model.startChat({
       generationConfig: model.generationConfig,
-      history: getConversationHistory(conversationId),
+      history: getCourseHistory(courseId),
     });
 
     // Create a stream
@@ -282,38 +277,38 @@ export async function POST(req: Request) {
       async start(controller) {
         const systemContext = `You are a helpful AI assistant that remembers past conversations to provide more personalized responses.`;
 
-        // Get learning path summary
-        let learningPathSummary = "";
+        // Get course summary
+        let courseSummary = "";
         try {
           const vectorStore = await getVectorStore(accessToken);
           if (vectorStore && "from" in vectorStore) {
             const { data: summaryData } = await vectorStore
               .from("ai_memories")
               .select("content")
-              .eq("conversation_id", conversationId)
+              .eq("course_id", courseId)
               .eq("user_id", validatedUserId)
               .eq("is_longterm", false)
-              .filter("metadata->>'type'", "eq", "learning_path_summary")
+              .filter("metadata->>'type'", "eq", "course_summary")
               .limit(1)
               .single();
 
             if (summaryData) {
-              learningPathSummary = summaryData.content;
-              console.log("Retrieved learning path summary for conversation");
+              courseSummary = summaryData.content;
+              console.log("Retrieved course summary");
             }
           }
         } catch (error) {
-          console.error("Error retrieving learning path summary:", error);
+          console.error("Error retrieving course summary:", error);
         }
 
         const enhancedMessage = `${systemContext}
         
 ${
-  learningPathSummary
-    ? `\nLearning Path Context for this conversation:\n${learningPathSummary}\n\n`
+  courseSummary
+    ? `\nCourse Context for this conversation:\n${courseSummary}\n\n`
     : ""
 }
-
+        
 ${relevantMemories ? relevantMemories : ""}
 
 ${message}
@@ -338,11 +333,11 @@ ${
           }
         }
 
-        updateConversationHistory(conversationId, message, fullResponse);
+        updateCourseHistory(courseId, message, fullResponse);
 
         try {
-          await supabase.from("conversation_messages").insert({
-            conversation_id: conversationId,
+          await supabase.from("course_messages").insert({
+            course_id: courseId,
             role: "assistant",
             content: fullResponse,
             message_type: "text",
@@ -356,7 +351,7 @@ ${
           if (isLongTerm && validatedUserId) {
             const { saveMemory } = await import("@/utils/memory");
             const success = await saveMemory(
-              conversationId,
+              courseId,
               message,
               fullResponse,
               validatedUserId,
@@ -364,32 +359,25 @@ ${
               accessToken
             );
             if (success) {
-              console.log(
-                `Long-term memory saved for conversation: ${conversationId}`
-              );
+              console.log(`Long-term memory saved for course: ${courseId}`);
             }
           }
 
           // Update summary every 20 messages
           const { count } = await supabase
-            .from("conversation_messages")
+            .from("course_messages")
             .select("*", { count: "exact", head: true })
-            .eq("conversation_id", conversationId);
+            .eq("course_id", courseId);
 
           const messageCount = count || 0;
           const shouldUpdateSummary =
             messageCount === 1 || messageCount % 20 === 0;
 
           if (shouldUpdateSummary && validatedUserId) {
-            const { saveLearningPathSummary } = await import("@/utils/memory");
-            await saveLearningPathSummary(
-              conversationId,
-              validatedUserId,
-              accessToken
-            );
+            await saveCourseSummary(courseId, validatedUserId, accessToken);
           }
 
-          await updateConversationTimestamp(conversationId, accessToken);
+          await updateCourseTimestamp(courseId, accessToken);
         } catch (error) {
           console.error("Error saving memory:", error);
         }

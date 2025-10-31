@@ -3,7 +3,7 @@ import { Document } from "@langchain/core/documents";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
 export async function saveMemory(
-  conversationId: string,
+  courseId: string,
   userMessage: string,
   aiResponse: string,
   userId?: string,
@@ -12,7 +12,7 @@ export async function saveMemory(
 ): Promise<boolean> {
   try {
     console.log(
-      `Saving memory for conversation: ${conversationId}, user: ${
+      `Saving memory for course: ${courseId}, user: ${
         userId || "anonymous"
       }, longterm: ${isLongTerm}`
     );
@@ -27,7 +27,7 @@ export async function saveMemory(
       pageContent: `USER: ${userMessage}\nAI: ${aiResponse}`,
       metadata: {
         userId: userId,
-        conversationId: conversationId,
+        courseId: courseId,
         timestamp: Date.now(),
         type: "chat",
         isLongterm: isLongTerm,
@@ -36,8 +36,8 @@ export async function saveMemory(
 
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUUID = uuidRegex.test(String(document.metadata.conversationId));
-    console.log(`  conversationId is valid UUID format: ${isUUID}`);
+    const isUUID = uuidRegex.test(String(document.metadata.courseId));
+    console.log(`  courseId is valid UUID format: ${isUUID}`);
     console.log("=====================================");
 
     if (vectorStore instanceof SupabaseVectorStore) {
@@ -52,8 +52,8 @@ export async function saveMemory(
         console.error("Error stack:", (error as Error).stack);
         console.error("Error type:", (error as object).constructor.name);
         console.error(
-          "DATABASE ERROR DETECTED:\nMemory could not be saved for conversation:",
-          conversationId
+          "DATABASE ERROR DETECTED:\nMemory could not be saved for course:",
+          courseId
         );
 
         try {
@@ -72,7 +72,7 @@ export async function saveMemory(
                 {
                   content: `USER: ${userMessage}\nAI: ${aiResponse}`,
                   metadata: {
-                    conversationId: conversationId,
+                    courseId: courseId,
                     userId: userId,
                     isLongterm: isLongTerm,
                     timestamp: timestamp,
@@ -110,7 +110,7 @@ export async function saveMemory(
           {
             content: `USER: ${userMessage}\nAI: ${aiResponse}`,
             metadata: {
-              conversationId: conversationId,
+              courseId: courseId,
               userId: userId,
               isLongterm: isLongTerm,
               timestamp: timestamp,
@@ -154,7 +154,7 @@ export async function saveMemory(
             `This suggests your database schema has incompatible types between related columns.`
           );
           console.error(
-            `Check that conversation_id in ai_memories matches the type of id in conversations table.`
+            `Check that course_id in ai_memories matches the type of id in courses table.`
           );
         }
       }

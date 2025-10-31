@@ -3,7 +3,7 @@ import { useRef, useEffect } from "react";
 import { Box, Button, Flex } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
-import { useConversations } from "@/hooks/useConversations";
+import { useCourses } from "@/hooks/useConversations";
 import { useMemory } from "@/hooks/useMemory";
 import { useChat } from "@/hooks/useChat";
 import { ChatHeader } from "@/components/chat/ChatHeader";
@@ -12,7 +12,7 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatProps } from "@/types/chat";
 
 export default function ChatRefactored({
-  conversationId,
+  courseId,
   isHomePage = false,
 }: ChatProps) {
   const router = useRouter();
@@ -22,22 +22,22 @@ export default function ChatRefactored({
 
   // Custom hooks
   const {
-    conversations,
-    setConversations,
-    activeConversationId,
+    courses,
+    setCourses,
+    activeCourseId,
     historyLoading,
     user,
     authChecked,
-    getActiveConversation,
-    createNewConversation,
-    renameConversation,
-    clearConversation,
-  } = useConversations(conversationId, isHomePage);
+    getActiveCourse,
+    createNewCourse,
+    renameCourse,
+    clearCourse,
+  } = useCourses(courseId, isHomePage);
 
   const { savingToLongTerm, forgetFromLongTermMemory, saveToLongTermMemory } =
     useMemory({
-      conversations,
-      setConversations,
+      courses,
+      setCourses,
       user,
     });
 
@@ -51,62 +51,62 @@ export default function ChatRefactored({
     setEnableWebSearch,
     handleSubmit,
   } = useChat({
-    conversations,
-    setConversations,
-    activeConversationId,
+    courses,
+    setCourses,
+    activeCourseId,
     user,
-    createNewConversation,
-    updateConversationHistory: (id, userMessage, aiResponse) => {
-      setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv.id === id) {
-            let updatedTitle = conv.title;
-            if (conv.history.length === 0 && userMessage.length > 0) {
+    createNewCourse,
+    updateCourseHistory: (id, userMessage, aiResponse) => {
+      setCourses((prev) =>
+        prev.map((course) => {
+          if (course.id === id) {
+            let updatedTitle = course.title;
+            if (course.history.length === 0 && userMessage.length > 0) {
               updatedTitle =
                 userMessage.substring(0, 30) +
                 (userMessage.length > 30 ? "..." : "");
             }
             return {
-              ...conv,
+              ...course,
               title: updatedTitle,
-              history: [...conv.history, { user: userMessage, ai: aiResponse }],
+              history: [...course.history, { user: userMessage, ai: aiResponse }],
             };
           }
-          return conv;
+          return course;
         })
       );
     },
     updateStreamingResponse: (id, aiResponse) => {
-      setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv.id === id && conv.history.length > 0) {
-            const updatedHistory = [...conv.history];
+      setCourses((prev) =>
+        prev.map((course) => {
+          if (course.id === id && course.history.length > 0) {
+            const updatedHistory = [...course.history];
             const lastIndex = updatedHistory.length - 1;
             updatedHistory[lastIndex] = {
               user: updatedHistory[lastIndex].user,
               ai: aiResponse,
             };
-            return { ...conv, history: updatedHistory };
+            return { ...course, history: updatedHistory };
           }
-          return conv;
+          return course;
         })
       );
     },
-    renameConversation,
-    getActiveConversation,
+    renameCourse,
+    getActiveCourse,
     isHomePage,
   });
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
-    const activeConvo = getActiveConversation();
-    if (chatContainerRef.current && activeConvo.history?.length > 0) {
+    const activeCourse = getActiveCourse();
+    if (chatContainerRef.current && activeCourse.history?.length > 0) {
       chatContainerRef.current.scrollTop =
         chatContainerRef.current.scrollHeight;
     }
-  }, [conversations, activeConversationId, getActiveConversation]);
+  }, [courses, activeCourseId, getActiveCourse]);
 
-  const activeConversation = getActiveConversation();
+  const activeCourse = getActiveCourse();
 
   return (
     <Flex
@@ -123,12 +123,12 @@ export default function ChatRefactored({
     >
       {/* Chat Header */}
       <ChatHeader
-        title={activeConversation.title}
+        title={activeCourse.title}
         onTitleUpdate={(newTitle) =>
-          renameConversation(activeConversationId, newTitle)
+          renameCourse(activeCourseId, newTitle)
         }
-        onClearChat={clearConversation}
-        hasHistory={activeConversation.history?.length > 0}
+        onClearChat={clearCourse}
+        hasHistory={activeCourse.history?.length > 0}
       />
 
       {/* Chat Content */}
@@ -159,7 +159,7 @@ export default function ChatRefactored({
         {/* Messages */}
         <Box px={4} pb={4}>
           <MessageList
-            conversation={activeConversation}
+            course={activeCourse}
             historyLoading={historyLoading}
             user={user}
             savingToLongTerm={savingToLongTerm}

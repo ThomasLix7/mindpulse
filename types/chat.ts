@@ -1,4 +1,4 @@
-export interface Conversation {
+export interface Course {
   id: string;
   title: string;
   history: Array<{
@@ -9,7 +9,7 @@ export interface Conversation {
 }
 
 export interface ChatProps {
-  conversationId?: string;
+  courseId?: string;
   isHomePage?: boolean;
 }
 

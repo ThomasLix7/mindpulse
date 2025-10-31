@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { apiFetch } from "@/utils/api-fetch";
-import { Conversation } from "@/types/chat";
+import { Course } from "@/types/chat";
 
 function isLongtermMemory(item: any): boolean {
   return Boolean(
@@ -11,21 +11,21 @@ function isLongtermMemory(item: any): boolean {
 }
 
 interface UseMemoryProps {
-  conversations: Conversation[];
-  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
+  courses: Course[];
+  setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   user: any;
 }
 
 export function useMemory({
-  conversations,
-  setConversations,
+  courses,
+  setCourses,
   user,
 }: UseMemoryProps) {
   const [savingToLongTerm, setSavingToLongTerm] = useState<number | null>(null);
 
   // Forget from long-term memory
   const forgetFromLongTermMemory = async (
-    conversationId: string,
+    courseId: string,
     messageIndex: number
   ) => {
     if (!user?.id) {
@@ -33,13 +33,13 @@ export function useMemory({
       return;
     }
 
-    const conversation = conversations.find((c) => c.id === conversationId);
-    if (!conversation || messageIndex >= conversation.history.length) {
-      console.error("Conversation or message not found");
+    const course = courses.find((c) => c.id === courseId);
+    if (!course || messageIndex >= course.history.length) {
+      console.error("Course or message not found");
       return;
     }
 
-    const message = conversation.history[messageIndex];
+    const message = course.history[messageIndex];
 
     // Set the saving indicator
     setSavingToLongTerm(messageIndex);
@@ -49,7 +49,7 @@ export function useMemory({
       const findMemoryResponse = await apiFetch("/api/memory", {
         method: "PUT",
         body: JSON.stringify({
-          conversationId: conversationId,
+          courseId: courseId,
           userMessage: message.user,
           userId: user.id,
         }),
@@ -89,27 +89,27 @@ export function useMemory({
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          // Only show alert if not an active conversation to avoid disrupting the chat flow
-          const isActiveConversation = conversations.some(
-            (c) => c.id === conversationId
+          // Only show alert if not an active course to avoid disrupting the chat flow
+          const isActiveCourse = courses.some(
+            (c) => c.id === courseId
           );
-          if (!isActiveConversation) {
+          if (!isActiveCourse) {
             alert("Successfully removed from long-term memory!");
           }
 
           // Update local state to reflect the change
-          setConversations((prev) =>
-            prev.map((conv) => {
-              if (conv.id === conversationId) {
-                const updatedHistory = [...conv.history];
+          setCourses((prev) =>
+            prev.map((course) => {
+              if (course.id === courseId) {
+                const updatedHistory = [...course.history];
                 updatedHistory[messageIndex] = {
                   ...updatedHistory[messageIndex],
                   isLongterm: false,
                 };
 
-                return { ...conv, history: updatedHistory };
+                return { ...course, history: updatedHistory };
               }
-              return conv;
+              return course;
             })
           );
         } else {
@@ -146,7 +146,7 @@ export function useMemory({
 
   // Save to long-term memory
   const saveToLongTermMemory = async (
-    conversationId: string,
+    courseId: string,
     messageIndex: number
   ) => {
     if (!user?.id) {
@@ -154,13 +154,13 @@ export function useMemory({
       return;
     }
 
-    const conversation = conversations.find((c) => c.id === conversationId);
-    if (!conversation || messageIndex >= conversation.history.length) {
-      console.error("Conversation or message not found");
+    const course = courses.find((c) => c.id === courseId);
+    if (!course || messageIndex >= course.history.length) {
+      console.error("Course or message not found");
       return;
     }
 
-    const message = conversation.history[messageIndex];
+    const message = course.history[messageIndex];
 
     // Set the saving indicator
     setSavingToLongTerm(messageIndex);
@@ -170,7 +170,7 @@ export function useMemory({
       const findMemoryResponse = await apiFetch("/api/memory", {
         method: "PUT",
         body: JSON.stringify({
-          conversationId: conversationId,
+          courseId: courseId,
           userMessage: message.user,
           userId: user.id,
         }),
@@ -209,27 +209,27 @@ export function useMemory({
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          // Only show alert if not an active conversation to avoid disrupting the chat flow
-          const isActiveConversation = conversations.some(
-            (c) => c.id === conversationId
+          // Only show alert if not an active course to avoid disrupting the chat flow
+          const isActiveCourse = courses.some(
+            (c) => c.id === courseId
           );
-          if (!isActiveConversation) {
+          if (!isActiveCourse) {
             alert("Successfully saved to long-term memory!");
           }
 
           // Update local state to reflect the change
-          setConversations((prev) =>
-            prev.map((conv) => {
-              if (conv.id === conversationId) {
-                const updatedHistory = [...conv.history];
+          setCourses((prev) =>
+            prev.map((course) => {
+              if (course.id === courseId) {
+                const updatedHistory = [...course.history];
                 updatedHistory[messageIndex] = {
                   ...updatedHistory[messageIndex],
                   isLongterm: true,
                 };
 
-                return { ...conv, history: updatedHistory };
+                return { ...course, history: updatedHistory };
               }
-              return conv;
+              return course;
             })
           );
         } else {

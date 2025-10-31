@@ -31,8 +31,8 @@ export default function ChatDefaultPage() {
     checkAuth();
   }, [router]);
 
-  // Create new conversation directly
-  const createNewConversation = async () => {
+  // Create new course directly
+  const createNewCourse = async () => {
     if (!user?.id) return;
 
     try {
@@ -47,25 +47,26 @@ export default function ChatDefaultPage() {
         return;
       }
 
-      const response = await apiFetch("/api/conversations", {
+      const response = await apiFetch("/api/courses", {
         method: "POST",
         body: JSON.stringify({
           userId: user.id,
-          title: "New Conversation",
+          title: "New Course",
+          learningPathId: "", // TODO: Get from context
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success && data.conversation) {
-          // Navigate directly to the new conversation
-          router.push(`/chat/${data.conversation.id}`);
+        if (data.success && data.course) {
+          // Navigate directly to the new course
+          router.push(`/chat/${data.course.id}`);
         }
       } else {
-        console.error("Failed to create conversation");
+        console.error("Failed to create course");
       }
     } catch (error) {
-      console.error("Error creating conversation:", error);
+      console.error("Error creating course:", error);
     }
   };
 
@@ -89,13 +90,13 @@ export default function ChatDefaultPage() {
             maxW="lg"
             lineHeight="tall"
           >
-            Your AI tutor is waiting. Let's start a conversation.
+            Your AI tutor is waiting. Let's start a course.
           </Text>
         </VStack>
 
         <Button
           colorScheme="blue"
-          onClick={createNewConversation}
+          onClick={createNewCourse}
           size="lg"
           px={8}
           py={6}
@@ -108,7 +109,7 @@ export default function ChatDefaultPage() {
           }}
           transition="all 0.2s"
         >
-          Start New Conversation
+          Start New Course
         </Button>
 
         {isLoading && <Text color="gray.400">Loading...</Text>}

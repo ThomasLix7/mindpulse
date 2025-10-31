@@ -1,19 +1,19 @@
 import { Box, Text, Spinner } from "@chakra-ui/react";
 import { useColorMode } from "@/components/ui/color-mode";
 import { MessageItem } from "./MessageItem";
-import { Conversation } from "@/types/chat";
+import { Course } from "@/types/chat";
 
 interface MessageListProps {
-  conversation: Conversation | null;
+  course: Course | null;
   historyLoading: boolean;
   user: any;
   savingToLongTerm: number | null;
-  onSaveToMemory: (conversationId: string, messageIndex: number) => void;
-  onForgetFromMemory: (conversationId: string, messageIndex: number) => void;
+  onSaveToMemory: (courseId: string, messageIndex: number) => void;
+  onForgetFromMemory: (courseId: string, messageIndex: number) => void;
 }
 
 export function MessageList({
-  conversation,
+  course,
   historyLoading,
   user,
   savingToLongTerm,
@@ -30,16 +30,16 @@ export function MessageList({
           fontSize="sm"
           color={colorMode === "dark" ? "gray.400" : "gray.600"}
         >
-          Loading conversation...
+          Loading course...
         </Text>
       </Box>
     );
   }
 
   if (
-    !conversation ||
-    !conversation.history ||
-    conversation.history.length === 0
+    !course ||
+    !course.history ||
+    course.history.length === 0
   ) {
     return (
       <Box textAlign="center" py={6}>
@@ -47,7 +47,7 @@ export function MessageList({
           fontSize="sm"
           color={colorMode === "dark" ? "gray.400" : "gray.600"}
         >
-          Start a new conversation below
+          Start a new course below
         </Text>
       </Box>
     );
@@ -55,12 +55,12 @@ export function MessageList({
 
   return (
     <Box>
-      {conversation.history.map((message, index) => (
+      {course.history.map((message, index) => (
         <MessageItem
           key={index}
           message={message}
           index={index}
-          conversationId={conversation.id}
+          courseId={course.id}
           user={user}
           savingToLongTerm={savingToLongTerm}
           onSaveToMemory={onSaveToMemory}

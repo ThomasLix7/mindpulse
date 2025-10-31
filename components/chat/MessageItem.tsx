@@ -13,17 +13,17 @@ function isLongtermMemory(item: any): boolean {
 interface MessageItemProps {
   message: Message;
   index: number;
-  conversationId: string;
+  courseId: string;
   user: any;
   savingToLongTerm: number | null;
-  onSaveToMemory: (conversationId: string, messageIndex: number) => void;
-  onForgetFromMemory: (conversationId: string, messageIndex: number) => void;
+  onSaveToMemory: (courseId: string, messageIndex: number) => void;
+  onForgetFromMemory: (courseId: string, messageIndex: number) => void;
 }
 
 export function MessageItem({
   message,
   index,
-  conversationId,
+  courseId,
   user,
   savingToLongTerm,
   onSaveToMemory,
@@ -102,9 +102,9 @@ export function MessageItem({
               const currentStatus = isLongtermMemory(message);
 
               if (currentStatus) {
-                onForgetFromMemory(conversationId, index);
+                onForgetFromMemory(courseId, index);
               } else {
-                onSaveToMemory(conversationId, index);
+                onSaveToMemory(courseId, index);
               }
             }}
             borderColor={isLongtermMemory(message) ? "red.600" : "gray.600"}

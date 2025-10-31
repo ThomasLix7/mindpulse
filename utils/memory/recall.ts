@@ -3,16 +3,14 @@ import { Document } from "@langchain/core/documents";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
 export async function recallMemory(
-  conversationId: string,
+  courseId: string,
   query: string,
   userId?: string,
   accessToken?: string
 ): Promise<Document[]> {
   try {
     console.log(
-      `Recalling memory for conversation: ${conversationId}, user: ${
-        userId || "anonymous"
-      }`
+      `Recalling memory for course: ${courseId}, user: ${userId || "anonymous"}`
     );
 
     const vectorStore = await getVectorStore(accessToken);
@@ -26,42 +24,41 @@ export async function recallMemory(
         try {
           const supabaseClient = (vectorStore as any).client;
 
-          // Get learning path summary
-          let learningPathSummary: any = null;
+          // Get course summary
+          let courseSummary: any = null;
           const { data: summaryData } = await supabaseClient
             .from("ai_memories")
             .select("content, metadata, created_at")
-            .eq("conversation_id", conversationId)
+            .eq("course_id", courseId)
             .eq("user_id", userId)
             .eq("is_longterm", false)
-            .filter("metadata->>'type'", "eq", "learning_path_summary")
+            .filter("metadata->>'type'", "eq", "course_summary")
             .limit(1)
             .single();
 
           if (summaryData) {
-            learningPathSummary = summaryData;
-            console.log("Retrieved learning path summary for conversation");
+            courseSummary = summaryData;
+            console.log("Retrieved course summary");
           }
 
-          // Get conversation long-term memories
-          const { data: conversationData, error: convError } =
-            await supabaseClient
-              .from("ai_memories")
-              .select("content, metadata, created_at")
-              .eq("conversation_id", conversationId)
-              .eq("is_longterm", true)
-              .order("created_at", { ascending: false })
-              .limit(5);
+          // Get course long-term memories
+          const { data: courseData, error: convError } = await supabaseClient
+            .from("ai_memories")
+            .select("content, metadata, created_at")
+            .eq("course_id", courseId)
+            .eq("is_longterm", true)
+            .order("created_at", { ascending: false })
+            .limit(5);
 
           if (convError) {
-            console.error("Error fetching conversation memories:", convError);
+            console.error("Error fetching course memories:", convError);
             return [];
           }
 
-          let allResults = conversationData || [];
+          let allResults = courseData || [];
 
-          if (learningPathSummary) {
-            allResults = [learningPathSummary, ...allResults];
+          if (courseSummary) {
+            allResults = [courseSummary, ...allResults];
           }
 
           // Also get long-term memories for this user using the new columns
@@ -136,15 +133,12 @@ export async function recallMemory(
           const { data, error } = await supabaseClient
             .from("ai_memories")
             .select("content, metadata, created_at")
-            .eq("conversation_id", conversationId)
+            .eq("course_id", courseId)
             .order("created_at", { ascending: false })
             .limit(5);
 
           if (error) {
-            console.error(
-              "Error fetching anonymous conversation memories:",
-              error
-            );
+            console.error("Error fetching anonymous course memories:", error);
             return [];
           }
 
@@ -173,57 +167,57 @@ export async function recallMemory(
         "⚠️ FALLBACK: Using direct Supabase queries for memory recall (no embeddings)"
       );
       try {
-        // Get learning path summary
-        let learningPathSummary: Document | null = null;
+        // Get course summary
+        let courseSummary: Document | null = null;
         if (userId) {
           const { data: summaryData } = await vectorStore
             .from("ai_memories")
             .select("content, metadata, created_at")
-            .eq("conversation_id", conversationId)
+            .eq("course_id", courseId)
             .eq("user_id", userId)
             .eq("is_longterm", false)
-            .filter("metadata->>'type'", "eq", "learning_path_summary")
+            .filter("metadata->>'type'", "eq", "course_summary")
             .limit(1)
             .single();
 
           if (summaryData) {
-            learningPathSummary = new Document({
+            courseSummary = new Document({
               pageContent: summaryData.content,
               metadata: {
                 ...summaryData.metadata,
                 timestamp: summaryData.created_at
                   ? new Date(summaryData.created_at).getTime()
                   : Date.now(),
-                type: "learning_path_summary",
+                type: "course_summary",
               },
             });
-            console.log("Retrieved learning path summary for conversation");
+            console.log("Retrieved course summary");
           }
         }
 
-        // Get conversation long-term memories
-        const { data: conversationData, error: convError } = await vectorStore
+        // Get course long-term memories
+        const { data: courseData, error: convError } = await vectorStore
           .from("ai_memories")
           .select("content, metadata, created_at")
-          .eq("conversation_id", conversationId)
+          .eq("course_id", courseId)
           .eq("is_longterm", true)
           .order("created_at", { ascending: false })
           .limit(5);
 
         if (convError) {
-          console.error("Error fetching conversation memories:", convError);
+          console.error("Error fetching course memories:", convError);
           return [];
         }
 
-        let results = conversationData || [];
+        let results = courseData || [];
 
-        if (learningPathSummary) {
+        if (courseSummary) {
           results = [
             {
-              content: learningPathSummary.pageContent,
-              metadata: learningPathSummary.metadata,
+              content: courseSummary.pageContent,
+              metadata: courseSummary.metadata,
               created_at: new Date(
-                learningPathSummary.metadata.timestamp
+                courseSummary.metadata.timestamp
               ).toISOString(),
             },
             ...results,

@@ -4,32 +4,32 @@ import { signOut } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
 
 interface UseChatProps {
-  conversations: any[];
-  setConversations: React.Dispatch<React.SetStateAction<any[]>>;
-  activeConversationId: string;
+  courses: any[];
+  setCourses: React.Dispatch<React.SetStateAction<any[]>>;
+  activeCourseId: string;
   user: any;
-  createNewConversation: () => Promise<string | null>;
-  updateConversationHistory: (
+  createNewCourse: () => Promise<string | null>;
+  updateCourseHistory: (
     id: string,
     userMessage: string,
     aiResponse: string
   ) => void;
   updateStreamingResponse: (id: string, aiResponse: string) => void;
-  renameConversation: (id: string, newTitle: string) => Promise<void>;
-  getActiveConversation: () => any;
+  renameCourse: (id: string, newTitle: string) => Promise<void>;
+  getActiveCourse: () => any;
   isHomePage?: boolean;
 }
 
 export function useChat({
-  conversations,
-  setConversations,
-  activeConversationId,
+  courses,
+  setCourses,
+  activeCourseId,
   user,
-  createNewConversation,
-  updateConversationHistory,
+  createNewCourse,
+  updateCourseHistory,
   updateStreamingResponse,
-  renameConversation,
-  getActiveConversation,
+  renameCourse,
+  getActiveCourse,
   isHomePage = false,
 }: UseChatProps) {
   const [input, setInput] = useState("");
@@ -44,26 +44,26 @@ export function useChat({
     const userMessage = input;
     setInput("");
 
-    // Check if we have an active conversation, or create a new one
-    let conversationId = activeConversationId;
-    if (!conversationId) {
-      conversationId = (await createNewConversation()) as string;
-      if (!conversationId) {
-        console.error("Failed to create a new conversation");
+    // Check if we have an active course, or create a new one
+    let courseId = activeCourseId;
+    if (!courseId) {
+      courseId = (await createNewCourse()) as string;
+      if (!courseId) {
+        console.error("Failed to create a new course");
         return;
       }
     }
 
-    // Add user message to conversation immediately
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id === conversationId) {
+    // Add user message to course immediately
+    setCourses((prev) =>
+      prev.map((course) => {
+        if (course.id === courseId) {
           return {
-            ...conv,
-            history: [...conv.history, { user: userMessage, ai: "" }],
+            ...course,
+            history: [...course.history, { user: userMessage, ai: "" }],
           };
         }
-        return conv;
+        return course;
       })
     );
 
@@ -74,7 +74,7 @@ export function useChat({
         method: "POST",
         body: JSON.stringify({
           message: userMessage,
-          conversationId: conversationId,
+          courseId: courseId,
           userId: user?.id,
           isLongTerm: isLongTerm,
           enableWebSearch: enableWebSearch,
@@ -120,7 +120,7 @@ export function useChat({
               aiResponse += data.text;
 
               // Update streaming response
-              updateStreamingResponse(conversationId, aiResponse);
+              updateStreamingResponse(courseId, aiResponse);
             } catch (e) {
               console.error("JSON parse error:", e);
             }
@@ -128,13 +128,13 @@ export function useChat({
         }
       }
 
-      // Ensure the final response is properly stored in the conversation history
+      // Ensure the final response is properly stored in the course history
       if (aiResponse) {
         // Final update to make sure the complete response is saved
-        setConversations((prev) =>
-          prev.map((conv) => {
-            if (conv.id === conversationId && conv.history.length > 0) {
-              const updatedHistory = [...conv.history];
+        setCourses((prev) =>
+          prev.map((course) => {
+            if (course.id === courseId && course.history.length > 0) {
+              const updatedHistory = [...course.history];
               const lastIndex = updatedHistory.length - 1;
 
               updatedHistory[lastIndex] = {
@@ -142,29 +142,29 @@ export function useChat({
                 ai: aiResponse,
               };
 
-              return { ...conv, history: updatedHistory };
+              return { ...course, history: updatedHistory };
             }
-            return conv;
+            return course;
           })
         );
 
-        // After successful completion, if this is the first message, update the conversation title
-        const activeConversation = getActiveConversation();
-        if (activeConversation.history.length === 1) {
+        // After successful completion, if this is the first message, update the course title
+        const activeCourse = getActiveCourse();
+        if (activeCourse.history.length === 1) {
           const newTitle =
             userMessage.substring(0, 30) +
             (userMessage.length > 30 ? "..." : "");
-          await renameConversation(conversationId, newTitle);
+          await renameCourse(courseId, newTitle);
         }
       }
     } catch (e) {
       console.error("Chat API or stream error:", e);
 
-      // Show an error message in the UI by updating the current conversation
-      setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv.id === conversationId && conv.history.length > 0) {
-            const updatedHistory = [...conv.history];
+      // Show an error message in the UI by updating the current course
+      setCourses((prev) =>
+        prev.map((course) => {
+          if (course.id === courseId && course.history.length > 0) {
+            const updatedHistory = [...course.history];
             const lastIndex = updatedHistory.length - 1;
 
             updatedHistory[lastIndex] = {
@@ -172,9 +172,9 @@ export function useChat({
               ai: "Sorry, there was an error processing your request. Please try again.",
             };
 
-            return { ...conv, history: updatedHistory };
+            return { ...course, history: updatedHistory };
           }
-          return conv;
+          return course;
         })
       );
     } finally {
@@ -185,7 +185,7 @@ export function useChat({
   const handleLogout = async () => {
     await signOut();
     // Reset to a new anonymous session
-    createNewConversation();
+    createNewCourse();
     router.push("/login");
   };
 

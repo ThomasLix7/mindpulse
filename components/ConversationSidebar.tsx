@@ -6,35 +6,33 @@ import { useColorMode } from "@/components/ui/color-mode";
 import { supabase } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
 
-interface ConversationSidebarProps {
-  conversations: any[];
+interface CourseSidebarProps {
+  courses: any[];
   isLoading: boolean;
   userId?: string;
-  onDeleteConversation?: (id: string) => Promise<void>;
+  onDeleteCourse?: (id: string) => Promise<void>;
 }
 
-export default function ConversationSidebar({
-  conversations,
+export default function CourseSidebar({
+  courses,
   isLoading,
   userId,
-  onDeleteConversation,
-}: ConversationSidebarProps) {
+  onDeleteCourse,
+}: CourseSidebarProps) {
   const { colorMode } = useColorMode();
   const router = useRouter();
   const pathname = usePathname();
-  const currentConversationId = pathname?.split("/").pop();
+  const currentCourseId = pathname?.split("/").pop();
 
-  const navigateToConversation = (id: string) => {
-    if (id === currentConversationId) {
-      ("Already on this conversation, not navigating");
+  const navigateToCourse = (id: string) => {
+    if (id === currentCourseId) {
       return;
     }
 
-    `Navigating to conversation: ${id}`;
     router.push(`/chat/${id}`);
   };
 
-  const createNewConversation = async () => {
+  const createNewCourse = async () => {
     if (!userId) return;
 
     try {
@@ -49,32 +47,33 @@ export default function ConversationSidebar({
         return;
       }
 
-      const response = await apiFetch("/api/conversations", {
+      const response = await apiFetch("/api/courses", {
         method: "POST",
         body: JSON.stringify({
           userId: userId,
-          title: "New Conversation",
+          title: "New Course",
+          learningPathId: "", // TODO: Get from context
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success && data.conversation) {
-          // Navigate directly to the new conversation
-          router.push(`/chat/${data.conversation.id}`);
+        if (data.success && data.course) {
+          // Navigate directly to the new course
+          router.push(`/chat/${data.course.id}`);
         }
       } else {
-        console.error("Failed to create conversation");
+        console.error("Failed to create course");
       }
     } catch (error) {
-      console.error("Error creating conversation:", error);
+      console.error("Error creating course:", error);
     }
   };
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (onDeleteConversation) {
-      onDeleteConversation(id);
+    if (onDeleteCourse) {
+      onDeleteCourse(id);
     }
   };
 
@@ -98,10 +97,10 @@ export default function ConversationSidebar({
           color={colorMode === "dark" ? "gray.400" : "gray.600"}
           mb={2}
         >
-          CONVERSATIONS
+          COURSES
         </Text>
 
-        {/* Conversations List */}
+        {/* Courses List */}
         {isLoading ? (
           <Box textAlign="center" py={8}>
             <Spinner size="sm" color="blue.400" />
@@ -110,39 +109,34 @@ export default function ConversationSidebar({
               fontSize="sm"
               color={colorMode === "dark" ? "gray.400" : "gray.600"}
             >
-              Loading conversations...
+              Loading courses...
             </Text>
           </Box>
-        ) : conversations.length === 0 ? (
+        ) : courses.length === 0 ? (
           <Box textAlign="center" py={8}>
             <Text
               fontSize="sm"
               color={colorMode === "dark" ? "gray.400" : "gray.600"}
             >
-              No conversations yet
+              No courses yet
             </Text>
           </Box>
         ) : (
           <Box overflowY="auto" flex="1">
             <Stack gap={1}>
-              {conversations.map((conv: any) => (
+              {courses.map((course: any) => (
                 <Box
-                  key={conv.id}
+                  key={course.id}
                   p={2}
                   cursor="pointer"
                   borderRadius="md"
                   bg={
-                    conv.id === currentConversationId
-                      ? "gray.800"
-                      : "transparent"
+                    course.id === currentCourseId ? "gray.800" : "transparent"
                   }
                   _hover={{
-                    bg:
-                      conv.id !== currentConversationId
-                        ? "gray.800"
-                        : "gray.700",
+                    bg: course.id !== currentCourseId ? "gray.800" : "gray.700",
                   }}
-                  onClick={() => navigateToConversation(conv.id)}
+                  onClick={() => navigateToCourse(course.id)}
                 >
                   <Box
                     display="flex"
@@ -152,19 +146,17 @@ export default function ConversationSidebar({
                     <Text
                       fontSize="sm"
                       fontWeight={
-                        conv.id === currentConversationId ? "bold" : "normal"
+                        course.id === currentCourseId ? "bold" : "normal"
                       }
                       color={
-                        conv.id === currentConversationId
-                          ? "blue.300"
-                          : "gray.300"
+                        course.id === currentCourseId ? "blue.300" : "gray.300"
                       }
                       overflow="hidden"
                       textOverflow="ellipsis"
                       whiteSpace="nowrap"
                       flex="1"
                     >
-                      {conv.title || "New Conversation"}
+                      {course.title || "New Course"}
                     </Text>
                     <Box
                       as="span"
@@ -173,7 +165,7 @@ export default function ConversationSidebar({
                       color="gray.500"
                       _hover={{ color: "red.400" }}
                       cursor="pointer"
-                      onClick={(e) => handleDelete(e, conv.id)}
+                      onClick={(e) => handleDelete(e, course.id)}
                     >
                       ×
                     </Box>
@@ -184,17 +176,17 @@ export default function ConversationSidebar({
           </Box>
         )}
 
-        {/* New Conversation Button */}
+        {/* New Course Button */}
         <Button
           colorScheme="blue"
           size="sm"
           leftIcon={<Box as="span">+</Box>}
-          onClick={createNewConversation}
+          onClick={createNewCourse}
           mt="auto"
           bg="blue.600"
           _hover={{ bg: "blue.500" }}
         >
-          New Conversation
+          New Course
         </Button>
       </Stack>
     </Box>

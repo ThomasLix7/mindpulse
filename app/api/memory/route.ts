@@ -563,7 +563,7 @@ export async function DELETE(request: Request) {
     // Check if memory exists and belongs to user
     const { data: memoryData, error: memoryError } = await supabaseServer
       .from("ai_memories")
-      .select("user_id, metadata, conversation_id, is_longterm")
+      .select("user_id, metadata, course_id, is_longterm")
       .eq("id", memoryId)
       .single();
 
@@ -593,29 +593,29 @@ export async function DELETE(request: Request) {
 
     console.log(`Processing forget/delete request for memory ID: ${memoryId}`);
 
-    // First check if this memory has a conversation_id
-    if (memoryData.conversation_id) {
-      console.log(`Memory has conversation_id: ${memoryData.conversation_id}`);
+    // First check if this memory has a course_id
+    if (memoryData.course_id) {
+      console.log(`Memory has course_id: ${memoryData.course_id}`);
 
-      // Check if the associated conversation still exists
+      // Check if the associated course still exists
       console.log(
-        `Checking if conversation ${memoryData.conversation_id} exists...`
+        `Checking if course ${memoryData.course_id} exists...`
       );
-      const { data: conversationData, error: conversationError } =
+      const { data: courseData, error: courseError } =
         await supabaseServer
-          .from("conversations")
+          .from("courses")
           .select("id")
-          .eq("id", memoryData.conversation_id)
+          .eq("id", memoryData.course_id)
           .single();
 
-      // If conversation fetch had an error or returned no data, it doesn't exist
-      if (conversationError) {
-        console.log(`Error finding conversation: ${conversationError.message}`);
+      // If course fetch had an error or returned no data, it doesn't exist
+      if (courseError) {
+        console.log(`Error finding course: ${courseError.message}`);
       }
 
-      if (!conversationData) {
+      if (!courseData) {
         console.log(
-          `Conversation ${memoryData.conversation_id} NOT FOUND - will delete memory completely`
+          `Course ${memoryData.course_id} NOT FOUND - will delete memory completely`
         );
 
         // Delete the memory record completely
@@ -640,20 +640,20 @@ export async function DELETE(request: Request) {
         return NextResponse.json({
           success: true,
           message:
-            "Memory has been deleted completely as the associated conversation no longer exists",
+            "Memory has been deleted completely as the associated course no longer exists",
         });
       } else {
         console.log(
-          `Conversation ${memoryData.conversation_id} still exists - will just update isLongterm flag`
+          `Course ${memoryData.course_id} still exists - will just update isLongterm flag`
         );
       }
     } else {
-      console.log(`Memory ${memoryId} has no conversation_id`);
+      console.log(`Memory ${memoryId} has no course_id`);
     }
 
     // If we reach here, either:
-    // 1. The conversation still exists, or
-    // 2. There is no conversation_id to check
+    // 1. The course still exists, or
+    // 2. There is no course_id to check
     // So we'll update the is_longterm flag as before
     console.log(`Updating memory ${memoryId} to set is_longterm=false`);
 
@@ -722,7 +722,7 @@ export async function DELETE(request: Request) {
 export async function PUT(request: Request) {
   try {
     // Parse the request
-    const { conversationId, userMessage, userId } = await request.json();
+    const { courseId, userMessage, userId } = await request.json();
 
     // Validate required parameters
     if (!userId) {
@@ -732,9 +732,9 @@ export async function PUT(request: Request) {
       );
     }
 
-    if (!conversationId) {
+    if (!courseId) {
       return NextResponse.json(
-        { error: "Conversation ID is required", success: false },
+        { error: "Course ID is required", success: false },
         { status: 400 }
       );
     }
@@ -812,9 +812,9 @@ export async function PUT(request: Request) {
     // We need to search for the user message part
     const { data: memories, error: searchError } = await client
       .from("ai_memories")
-      .select("id, content, metadata, conversation_id, created_at")
+      .select("id, content, metadata, course_id, created_at")
       .eq("user_id", userId)
-      .eq("conversation_id", conversationId)
+      .eq("course_id", courseId)
       .order("created_at", { ascending: false });
 
     if (searchError) {
@@ -830,19 +830,19 @@ export async function PUT(request: Request) {
     }
 
     if (!memories || memories.length === 0) {
-      console.log(`No memories found for conversation: ${conversationId}`);
+      console.log(`No memories found for course: ${courseId}`);
       return NextResponse.json(
         {
-          error: "No memories found for this conversation",
+          error: "No memories found for this course",
           success: false,
-          details: `No memories exist for conversation ID: ${conversationId}`,
+          details: `No memories exist for course ID: ${courseId}`,
         },
         { status: 404 }
       );
     }
 
     console.log(
-      `Found ${memories.length} memories for conversation, searching for best match...`
+      `Found ${memories.length} memories for course, searching for best match...`
     );
 
     // Find the memory that contains the user message
@@ -964,7 +964,7 @@ export async function PUT(request: Request) {
     }
 
     console.log(
-      `No matching memory found for message in conversation: ${conversationId}`
+      `No matching memory found for message in course: ${courseId}`
     );
     return NextResponse.json(
       {

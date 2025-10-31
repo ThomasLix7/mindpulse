@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
-import { Conversation } from "@/types/chat";
+import { Course } from "@/types/chat";
 
-function generateConversationId(): string {
-  return `conv-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
+function generateCourseId(): string {
+  return `course-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
 }
 
 function isLongtermMemory(item: any): boolean {
@@ -16,23 +16,18 @@ function isLongtermMemory(item: any): boolean {
   );
 }
 
-export function useConversations(
-  conversationId?: string,
-  isHomePage?: boolean
-) {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string>(
-    conversationId || ""
-  );
+export function useCourses(courseId?: string, isHomePage?: boolean) {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [activeCourseId, setActiveCourseId] = useState<string>(courseId || "");
   const [historyLoading, setHistoryLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
 
-  // Get active conversation
-  const getActiveConversation = () => {
+  // Get active course
+  const getActiveCourse = () => {
     return (
-      conversations.find((conv) => conv.id === activeConversationId) || {
+      courses.find((course) => course.id === activeCourseId) || {
         id: "",
         title: "",
         history: [],
@@ -48,19 +43,19 @@ export function useConversations(
         setUser(user);
         setAuthChecked(true);
 
-        // Load conversations from localStorage or server
-        if (conversationId === "new" || !conversationId) {
+        // Load courses from localStorage or server
+        if (courseId === "new" || !courseId) {
           setHistoryLoading(false);
           return;
         }
 
-        // Load specific conversation if provided
-        if (conversationId && user?.id) {
-          await loadSpecificConversation(conversationId, user.id);
+        // Load specific course if provided
+        if (courseId && user?.id) {
+          await loadSpecificCourse(courseId, user.id);
           setHistoryLoading(false);
         } else {
-          // Load all conversations
-          await loadConversations(user?.id);
+          // Load all courses
+          await loadCourses(user?.id);
         }
       } catch (error) {
         console.error("Error initializing chat component:", error);
@@ -70,45 +65,45 @@ export function useConversations(
     };
 
     checkAuth();
-  }, [conversationId]);
+  }, [courseId]);
 
-  // Watch for conversationId changes
+  // Watch for courseId changes
   useEffect(() => {
     if (!user?.id || !authChecked) return;
 
     // Clear loading state
     setHistoryLoading(true);
 
-    if (conversationId && conversationId !== "new") {
-      // Set as active conversation
-      setActiveConversationId(conversationId);
+    if (courseId && courseId !== "new") {
+      // Set as active course
+      setActiveCourseId(courseId);
       // Reset previous state
-      sessionStorage.removeItem(`checked-empty-${conversationId}`);
-      // Load conversation
-      loadSpecificConversation(conversationId, user?.id)
+      sessionStorage.removeItem(`checked-empty-${courseId}`);
+      // Load course
+      loadSpecificCourse(courseId, user?.id)
         .then(() => setHistoryLoading(false))
         .catch(() => setHistoryLoading(false));
     }
-  }, [conversationId, user?.id, authChecked]);
+  }, [courseId, user?.id, authChecked]);
 
-  // Load conversations from localStorage or server
-  const loadConversations = async (userId?: string) => {
+  // Load courses from localStorage or server
+  const loadCourses = async (userId?: string) => {
     setHistoryLoading(true);
 
     try {
       if (userId) {
         // Fetch from server
-        await fetchConversationsFromServer(userId);
+        await fetchCoursesFromServer(userId);
       }
     } catch (error) {
-      console.error("Error loading conversations:", error);
+      console.error("Error loading courses:", error);
     } finally {
       setHistoryLoading(false);
     }
   };
 
-  // Fetch conversations from server
-  const fetchConversationsFromServer = async (userId: string) => {
+  // Fetch courses from server
+  const fetchCoursesFromServer = async (userId: string) => {
     try {
       // Get user's access token
       const {
@@ -120,58 +115,52 @@ export function useConversations(
         throw new Error("No access token available");
       }
 
-      // Get conversation list without history
-      const response = await apiFetch(`/api/conversations?userId=${userId}`, {
+      // Get course list without history
+      const response = await apiFetch(`/api/courses?userId=${userId}`, {
         method: "GET",
       });
 
       if (response.ok) {
         const data = await response.json();
 
-        if (
-          data.success &&
-          data.conversations &&
-          Array.isArray(data.conversations)
-        ) {
+        if (data.success && data.courses && Array.isArray(data.courses)) {
           // Map server data to client format
-          const clientConversations = data.conversations.map((conv: any) => ({
-            id: conv.id,
-            title: conv.title,
+          const clientCourses = data.courses.map((course: any) => ({
+            id: course.id,
+            title: course.title,
             history: [], // Empty history, loaded when needed
           }));
 
-          setConversations(clientConversations);
+          setCourses(clientCourses);
 
-          // Prioritize conversationId from URL
+          // Prioritize courseId from URL
           if (
-            conversationId &&
-            clientConversations.some(
-              (c: Conversation) => c.id === conversationId
-            )
+            courseId &&
+            clientCourses.some((c: Course) => c.id === courseId)
           ) {
             // Already set in initial state
           }
-          // Set most recent conversation
-          else if (clientConversations.length > 0) {
-            setActiveConversationId(clientConversations[0].id);
+          // Set most recent course
+          else if (clientCourses.length > 0) {
+            setActiveCourseId(clientCourses[0].id);
           }
-          // Don't create new conversation here - let the component handle it
+          // Don't create new course here - let the component handle it
         }
-        // Don't create new conversation here - let the component handle it
+        // Don't create new course here - let the component handle it
       }
-      // Don't create new conversation here - let the component handle it
+      // Don't create new course here - let the component handle it
     } catch (error) {
-      console.error("Error fetching conversations:", error);
-      // Don't create new conversation here - let the component handle it
+      console.error("Error fetching courses:", error);
+      // Don't create new course here - let the component handle it
     }
   };
 
-  // Create new conversation
-  const createNewConversation = async () => {
+  // Create new course
+  const createNewCourse = async () => {
     // Prevent multiple simultaneous creations
     if (historyLoading || !user?.id) return null;
 
-    const defaultTitle = "New Conversation";
+    const defaultTitle = "New Course";
 
     try {
       // Get user's access token
@@ -184,56 +173,59 @@ export function useConversations(
         throw new Error("No access token available");
       }
 
-      const serverResponse = await apiFetch("/api/conversations", {
+      const serverResponse = await apiFetch("/api/courses", {
         method: "POST",
         body: JSON.stringify({
           userId: user.id,
           title: defaultTitle,
+          learningPathId: "", // TODO: This should come from context
         }),
       });
 
       if (serverResponse.ok) {
         const data = await serverResponse.json();
-        if (data.success && data.conversation) {
-          const newConversation = {
-            id: data.conversation.id,
-            title: data.conversation.title,
+        if (data.success && data.course) {
+          const newCourse = {
+            id: data.course.id,
+            title: data.course.title,
             history: [],
           };
 
-          setConversations((prev) => [newConversation, ...prev]);
+          setCourses((prev) => [newCourse, ...prev]);
 
-          // Notify sidebar of new conversation
+          // Notify sidebar of new course
           window.dispatchEvent(
-            new CustomEvent("conversation-created", {
-              detail: newConversation,
+            new CustomEvent("course-created", {
+              detail: newCourse,
             })
           );
 
-          // Navigate to conversation
-          router.push(`/chat/${data.conversation.id}`);
+          // Navigate to course
+          router.push(`/chat/${data.course.id}`);
 
-          return data.conversation.id;
+          return data.course.id;
         }
       }
     } catch (error) {
-      console.error("Error creating conversation:", error);
+      console.error("Error creating course:", error);
     }
 
     return null;
   };
 
-  // Rename conversation
-  const renameConversation = async (id: string, newTitle: string) => {
+  // Rename course
+  const renameCourse = async (id: string, newTitle: string) => {
     // Update locally first
-    setConversations((prev) =>
-      prev.map((conv) => (conv.id === id ? { ...conv, title: newTitle } : conv))
+    setCourses((prev) =>
+      prev.map((course) =>
+        course.id === id ? { ...course, title: newTitle } : course
+      )
     );
 
     // Update on server for logged-in users
     if (user?.id) {
       try {
-        await apiFetch("/api/conversations", {
+        await apiFetch("/api/courses", {
           method: "PUT",
           body: JSON.stringify({
             id,
@@ -242,62 +234,60 @@ export function useConversations(
           }),
         });
       } catch (error) {
-        console.error("Error updating conversation title on server:", error);
+        console.error("Error updating course title on server:", error);
       }
     }
   };
 
-  // Delete conversation
-  const deleteConversation = async (id: string) => {
-    // Remove conversation from list
-    setConversations((prev) => prev.filter((conv) => conv.id !== id));
+  // Delete course
+  const deleteCourse = async (id: string) => {
+    // Remove course from list
+    setCourses((prev) => prev.filter((course) => course.id !== id));
 
-    // Switch to another conversation if deleting active one
-    if (id === activeConversationId) {
-      if (conversations.length > 1) {
-        // Find next conversation
-        const remainingConversations = conversations.filter(
-          (conv) => conv.id !== id
-        );
-        setActiveConversationId(remainingConversations[0].id);
+    // Switch to another course if deleting active one
+    if (id === activeCourseId) {
+      if (courses.length > 1) {
+        // Find next course
+        const remainingCourses = courses.filter((course) => course.id !== id);
+        setActiveCourseId(remainingCourses[0].id);
       } else {
-        createNewConversation();
+        createNewCourse();
       }
     }
 
     // Delete on server for logged-in users
     if (user?.id) {
       try {
-        await apiFetch(`/api/conversations?id=${id}&userId=${user.id}`, {
+        await apiFetch(`/api/courses?id=${id}&userId=${user.id}`, {
           method: "DELETE",
         });
       } catch (error) {
-        console.error("Error deleting conversation on server:", error);
+        console.error("Error deleting course on server:", error);
       }
     }
   };
 
-  // Switch conversation
-  const switchConversation = (id: string) => {
-    setActiveConversationId(id);
-    // Navigate to conversation page
+  // Switch course
+  const switchCourse = (id: string) => {
+    setActiveCourseId(id);
+    // Navigate to course page
     if (!isHomePage) {
       router.push(`/chat/${id}`);
     }
   };
 
-  // Update conversation history
-  const updateConversationHistory = (
+  // Update course history
+  const updateCourseHistory = (
     id: string,
     userMessage: string,
     aiResponse: string
   ) => {
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id === id) {
-          // Update conversation title based on first message if it's default
-          let updatedTitle = conv.title;
-          if (conv.history.length === 0 && userMessage.length > 0) {
+    setCourses((prev) =>
+      prev.map((course) => {
+        if (course.id === id) {
+          // Update course title based on first message if it's default
+          let updatedTitle = course.title;
+          if (course.history.length === 0 && userMessage.length > 0) {
             // Use first 30 chars of user message as title
             updatedTitle =
               userMessage.substring(0, 30) +
@@ -305,22 +295,22 @@ export function useConversations(
           }
 
           return {
-            ...conv,
+            ...course,
             title: updatedTitle,
-            history: [...conv.history, { user: userMessage, ai: aiResponse }],
+            history: [...course.history, { user: userMessage, ai: aiResponse }],
           };
         }
-        return conv;
+        return course;
       })
     );
   };
 
-  // Update conversation history with streaming AI response
+  // Update course history with streaming AI response
   const updateStreamingResponse = (id: string, aiResponse: string) => {
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id === id && conv.history.length > 0) {
-          const updatedHistory = [...conv.history];
+    setCourses((prev) =>
+      prev.map((course) => {
+        if (course.id === id && course.history.length > 0) {
+          const updatedHistory = [...course.history];
           const lastIndex = updatedHistory.length - 1;
 
           updatedHistory[lastIndex] = {
@@ -328,99 +318,89 @@ export function useConversations(
             ai: aiResponse,
           };
 
-          return { ...conv, history: updatedHistory };
+          return { ...course, history: updatedHistory };
         }
-        return conv;
+        return course;
       })
     );
   };
 
-  // Clear conversation
-  const clearConversation = async () => {
-    // Clear only the active conversation in the UI
-    setConversations((prev) =>
-      prev.map((conv) =>
-        conv.id === activeConversationId ? { ...conv, history: [] } : conv
+  // Clear course
+  const clearCourse = async () => {
+    // Clear only the active course in the UI
+    setCourses((prev) =>
+      prev.map((course) =>
+        course.id === activeCourseId ? { ...course, history: [] } : course
       )
     );
 
     // For logged-in users, clear history in the database
     if (user?.id) {
       try {
-        await fetch(`/api/conversations/clear`, {
+        await fetch(`/api/courses/clear`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            conversationId: activeConversationId,
+            courseId: activeCourseId,
             userId: user.id,
           }),
         });
       } catch (error) {
-        console.error("Error clearing conversation history on server:", error);
+        console.error("Error clearing course history on server:", error);
       }
     }
   };
 
-  // Check if the conversation from URL exists in our loaded conversations
-  const checkConversationExists = (id: string) => {
-    return conversations.some((conv) => conv.id === id);
+  // Check if the course from URL exists in our loaded courses
+  const checkCourseExists = (id: string) => {
+    return courses.some((course) => course.id === id);
   };
 
-  // Safety check to ensure the current conversation is loaded with all its memories
+  // Safety check to ensure the current course is loaded with all its memories
   useEffect(() => {
     // Skip if we're still loading or not authenticated yet
     if (historyLoading || !authChecked) {
       return;
     }
 
-    // Only attempt to load if we have an active conversation ID and it's not "new"
-    if (activeConversationId && activeConversationId !== "new") {
-      // Check if we've already confirmed this conversation is empty
-      const checkedEmptyKey = `checked-empty-${activeConversationId}`;
+    // Only attempt to load if we have an active course ID and it's not "new"
+    if (activeCourseId && activeCourseId !== "new") {
+      // Check if we've already confirmed this course is empty
+      const checkedEmptyKey = `checked-empty-${activeCourseId}`;
       if (sessionStorage.getItem(checkedEmptyKey)) {
         return;
       }
 
-      const exists = checkConversationExists(activeConversationId);
+      const exists = checkCourseExists(activeCourseId);
 
-      // Only load if the conversation doesn't exist at all in our state
+      // Only load if the course doesn't exist at all in our state
       if (!exists) {
-        loadSpecificConversation(activeConversationId, user?.id);
+        loadSpecificCourse(activeCourseId, user?.id);
         return;
       }
 
-      // to the loadSpecificConversation function with its empty check tracking
+      // to the loadSpecificCourse function with its empty check tracking
     }
-  }, [historyLoading, authChecked, activeConversationId, user?.id]);
+  }, [historyLoading, authChecked, activeCourseId, user?.id]);
 
-  // Create a new conversation if none exist and we're not loading
+  // Create a new course if none exist and we're not loading
   useEffect(() => {
-    if (
-      !historyLoading &&
-      authChecked &&
-      conversations.length === 0 &&
-      !conversationId
-    ) {
-      createNewConversation();
+    if (!historyLoading && authChecked && courses.length === 0 && !courseId) {
+      createNewCourse();
     }
-  }, [historyLoading, authChecked, conversations.length, conversationId]);
+  }, [historyLoading, authChecked, courses.length, courseId]);
 
-  // Handle "new" conversation creation
+  // Handle "new" course creation
   useEffect(() => {
-    if (conversationId === "new" && !historyLoading && authChecked) {
-      createNewConversation();
+    if (courseId === "new" && !historyLoading && authChecked) {
+      createNewCourse();
     }
-  }, [conversationId, historyLoading, authChecked]);
+  }, [courseId, historyLoading, authChecked]);
 
-  // Load specific conversation by ID
-  const loadSpecificConversation = async (
-    conversationId: string,
-    userId?: string
-  ) => {
-    // Don't load if we already checked this conversation was empty (prevents infinite loops)
-    const checkedEmpty = sessionStorage.getItem(
-      `checked-empty-${conversationId}`
-    );
+  // Load specific course by ID
+  const loadSpecificCourse = async (courseId: string, userId?: string) => {
+    // Don't load if we already checked this course was empty (prevents infinite loops)
+    const checkedEmpty = sessionStorage.getItem(`checked-empty-${courseId}`);
     if (checkedEmpty) {
       setHistoryLoading(false);
       return null;
@@ -430,23 +410,20 @@ export function useConversations(
     setHistoryLoading(true);
 
     try {
-      // First check if we already have this conversation in memory
-      const existingConversation = conversations.find(
-        (c) => c.id === conversationId
-      );
+      // First check if we already have this course in memory
+      const existingCourse = courses.find((c) => c.id === courseId);
 
-      if (existingConversation) {
-        // If conversation exists but has no history, check if we need to load from server
+      if (existingCourse) {
+        // If course exists but has no history, check if we need to load from server
         if (
-          (!existingConversation.history ||
-            existingConversation.history.length === 0) &&
+          (!existingCourse.history || existingCourse.history.length === 0) &&
           user?.id
         ) {
           // Check server for history
         } else {
-          // We have a valid memory conversation with history, use it
+          // We have a valid memory course with history, use it
           setHistoryLoading(false);
-          return existingConversation;
+          return existingCourse;
         }
       }
 
@@ -464,9 +441,9 @@ export function useConversations(
           }
 
           const response = await apiFetch(
-            `/api/conversations?userId=${encodeURIComponent(
+            `/api/courses?userId=${encodeURIComponent(
               user.id
-            )}&conversationId=${encodeURIComponent(conversationId)}`,
+            )}&courseId=${encodeURIComponent(courseId)}`,
             {}
           );
 
@@ -476,62 +453,58 @@ export function useConversations(
 
           const data = await response.json();
 
-          if (data.conversation) {
+          if (data.course) {
             // Ensure history is always an array
-            data.conversation.history = data.conversation.history || [];
+            data.course.history = data.course.history || [];
 
             // Convert server history format (userMessage/aiResponse) to client format (user/ai)
-            const formattedHistory = data.conversation.history.map(
-              (item: any) => {
-                // Use utility function to determine longterm status
-                const itemIsLongterm = isLongtermMemory(item);
+            const formattedHistory = data.course.history.map((item: any) => {
+              // Use utility function to determine longterm status
+              const itemIsLongterm = isLongtermMemory(item);
 
-                return {
-                  user: item.userMessage,
-                  ai: item.aiResponse,
-                  isLongterm: itemIsLongterm,
-                };
-              }
-            );
+              return {
+                user: item.userMessage,
+                ai: item.aiResponse,
+                isLongterm: itemIsLongterm,
+              };
+            });
 
-            const formattedConversation = {
-              id: data.conversation.id,
-              title: data.conversation.title || "New Conversation",
-              created_at: data.conversation.created_at,
-              updated_at: data.conversation.updated_at,
+            const formattedCourse = {
+              id: data.course.id,
+              title: data.course.title || "New Course",
+              created_at: data.course.created_at,
+              updated_at: data.course.updated_at,
               history: formattedHistory, // Use the converted history format
             };
 
-            // Update conversations in memory
-            setConversations((prevConvos) => {
+            // Update courses in memory
+            setCourses((prevCourses) => {
               // Avoid duplicates
-              const filtered = prevConvos.filter(
-                (c) => c.id !== conversationId
-              );
-              return [...filtered, formattedConversation];
+              const filtered = prevCourses.filter((c) => c.id !== courseId);
+              return [...filtered, formattedCourse];
             });
 
             setHistoryLoading(false);
 
             // Mark as empty if needed for future reference
             if (
-              !formattedConversation.history ||
-              formattedConversation.history.length === 0
+              !formattedCourse.history ||
+              formattedCourse.history.length === 0
             ) {
-              sessionStorage.setItem(`checked-empty-${conversationId}`, "true");
+              sessionStorage.setItem(`checked-empty-${courseId}`, "true");
             }
 
-            return formattedConversation;
+            return formattedCourse;
           } else {
-            sessionStorage.setItem(`checked-empty-${conversationId}`, "true");
+            sessionStorage.setItem(`checked-empty-${courseId}`, "true");
           }
         } catch (error) {
-          console.error("Error fetching conversation from server:", error);
+          console.error("Error fetching course from server:", error);
         }
       }
 
       setHistoryLoading(false);
-      sessionStorage.setItem(`checked-empty-${conversationId}`, "true");
+      sessionStorage.setItem(`checked-empty-${courseId}`, "true");
       return null;
     } catch (error) {
       setHistoryLoading(false);
@@ -540,21 +513,21 @@ export function useConversations(
   };
 
   return {
-    conversations,
-    setConversations,
-    activeConversationId,
-    setActiveConversationId,
+    courses,
+    setCourses,
+    activeCourseId,
+    setActiveCourseId,
     historyLoading,
     user,
     authChecked,
-    getActiveConversation,
-    createNewConversation,
-    renameConversation,
-    deleteConversation,
-    switchConversation,
-    updateConversationHistory,
+    getActiveCourse,
+    createNewCourse,
+    renameCourse,
+    deleteCourse,
+    switchCourse,
+    updateCourseHistory,
     updateStreamingResponse,
-    clearConversation,
-    loadSpecificConversation,
+    clearCourse,
+    loadSpecificCourse,
   };
 }

@@ -186,7 +186,7 @@ export default function LongTermMemories() {
       <Heading mb={6}>Your Long-Term Memories</Heading>
       <Text mb={4}>
         This page shows memories that have been saved to your long-term memory
-        storage. These memories persist across all your conversations.
+        storage. These memories persist across all your courses.
       </Text>
 
       {/* Search form */}
@@ -238,7 +238,7 @@ export default function LongTermMemories() {
         <Box p={4} bg="blue.900" borderRadius="md" color="blue.100">
           <Text>No long-term memories found. This could mean that:</Text>
           <Text mt={2}>
-            1. You haven't saved any conversations to long-term memory yet.
+            1. You haven't saved any course exchanges to long-term memory yet.
           </Text>
           <Text>
             2. There might be a technical issue retrieving your memories.

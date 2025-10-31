@@ -89,7 +89,7 @@ export function ChatInput({
                   disabled={!user}
                 />
                 <Text fontSize="sm" ml={2} color="gray.300">
-                  Remember the conversation
+                  Remember the course
                 </Text>
               </Box>
             )}

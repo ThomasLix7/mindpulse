@@ -42,7 +42,7 @@ export function ChatHeader({
       setIsEditingTitle(false);
     } catch (error) {
       console.error("Error updating title:", error);
-      alert("Failed to update the conversation title. Please try again.");
+      alert("Failed to update the course title. Please try again.");
     } finally {
       setUpdatingTitle(false);
     }
@@ -60,7 +60,7 @@ export function ChatHeader({
       zIndex={2}
       flexShrink={0}
     >
-      {/* Current Conversation Title with Edit Mode */}
+      {/* Current Course Title with Edit Mode */}
       {isEditingTitle ? (
         <Flex alignItems="center" flex="1" mr={2}>
           <Input
@@ -101,7 +101,7 @@ export function ChatHeader({
       ) : (
         <Flex alignItems="center">
           <Heading size="md" fontWeight="medium" color="white">
-            {title || "New Conversation"}
+            {title || "New Course"}
           </Heading>
           <Button
             size="sm"
