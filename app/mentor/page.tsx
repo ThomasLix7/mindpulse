@@ -9,6 +9,7 @@ import { useColorMode } from "@/components/ui/color-mode";
 import LearningPathForm, {
   LearningPathFormData,
 } from "@/components/LearningPathForm";
+import SkillConfirmationDialog from "@/components/SkillConfirmationDialog";
 
 export default function ChatDefaultPage() {
   const { colorMode } = useColorMode();
@@ -16,6 +17,11 @@ export default function ChatDefaultPage() {
   const [user, setUser] = useState<any>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [showSkillConfirmation, setShowSkillConfirmation] = useState(false);
+  const [skillAssessment, setSkillAssessment] = useState<{
+    learningPath: any;
+    requiredSkills: any[];
+  } | null>(null);
   const router = useRouter();
 
   // Check authentication status
@@ -36,7 +42,7 @@ export default function ChatDefaultPage() {
     checkAuth();
   }, [router]);
 
-  // Create new learning path from form data
+  // Phase 1: Create learning path and analyze required skills
   const handleCreateLearningPath = async (formData: LearningPathFormData) => {
     if (!user?.id) {
       console.error("User not authenticated");
@@ -59,14 +65,23 @@ export default function ChatDefaultPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.learningPath) {
-          // Dispatch event for layout to update sidebar
-          window.dispatchEvent(
-            new CustomEvent("learning-path-created", {
-              detail: data.learningPath,
-            })
-          );
-          // Navigate to the new learning path
-          router.push(`/mentor/${data.learningPath.id}`);
+          // Phase 1: Skill assessment phase
+          if (data.phase === "skill_assessment" && data.requiredSkills) {
+            setSkillAssessment({
+              learningPath: data.learningPath,
+              requiredSkills: data.requiredSkills,
+            });
+            setShowSkillConfirmation(true);
+            setIsCreating(false);
+          } else {
+            // Direct curriculum generation (fallback)
+            window.dispatchEvent(
+              new CustomEvent("learning-path-created", {
+                detail: data.learningPath,
+              })
+            );
+            router.push(`/mentor/${data.learningPath.id}`);
+          }
         }
       } else {
         const errorData = await response.json();
@@ -79,6 +94,61 @@ export default function ChatDefaultPage() {
       console.error("Error creating learning path:", error);
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  // Phase 2: Generate curriculum with confirmed skills
+  const handleConfirmSkills = async (
+    confirmedSkills: Array<{
+      skill_name: string;
+      proficiency_level: string;
+      id?: string | null;
+    }>
+  ) => {
+    if (!user?.id || !skillAssessment) {
+      return;
+    }
+
+    setShowSkillConfirmation(false);
+    setIsCreating(true);
+
+    try {
+      const response = await apiFetch("/api/learning-paths", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: user.id,
+          title: skillAssessment.learningPath.title,
+          goal: skillAssessment.learningPath.goal,
+          domain: skillAssessment.learningPath.domain,
+          subject: skillAssessment.learningPath.subject,
+          level: skillAssessment.learningPath.level,
+          learningPathId: skillAssessment.learningPath.id,
+          confirmedSkills,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.learningPath) {
+          window.dispatchEvent(
+            new CustomEvent("learning-path-created", {
+              detail: data.learningPath,
+            })
+          );
+          router.push(`/mentor/${data.learningPath.id}`);
+        }
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to generate curriculum:", errorData.error);
+        if (response.status === 401) {
+          router.push("/login");
+        }
+      }
+    } catch (error) {
+      console.error("Error generating curriculum:", error);
+    } finally {
+      setIsCreating(false);
+      setSkillAssessment(null);
     }
   };
 
@@ -157,6 +227,19 @@ export default function ChatDefaultPage() {
         onSubmit={handleCreateLearningPath}
         isLoading={isCreating}
       />
+
+      {skillAssessment && (
+        <SkillConfirmationDialog
+          isOpen={showSkillConfirmation}
+          onClose={() => {
+            setShowSkillConfirmation(false);
+            setSkillAssessment(null);
+          }}
+          requiredSkills={skillAssessment.requiredSkills}
+          onConfirm={handleConfirmSkills}
+          isLoading={isCreating}
+        />
+      )}
     </Box>
   );
 }

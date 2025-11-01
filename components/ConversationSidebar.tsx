@@ -17,6 +17,7 @@ import { useState, useEffect } from "react";
 import LearningPathForm, {
   LearningPathFormData,
 } from "@/components/LearningPathForm";
+import SkillConfirmationDialog from "@/components/SkillConfirmationDialog";
 import {
   DialogRoot,
   DialogContent,
@@ -223,6 +224,12 @@ export default function CourseSidebar({
     });
   };
 
+  const [showSkillConfirmation, setShowSkillConfirmation] = useState(false);
+  const [skillAssessment, setSkillAssessment] = useState<{
+    learningPath: any;
+    requiredSkills: any[];
+  } | null>(null);
+
   const handleCreateLearningPath = async (formData: LearningPathFormData) => {
     if (!userId) return;
 
@@ -238,19 +245,79 @@ export default function CourseSidebar({
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.learningPath) {
-          window.dispatchEvent(
-            new CustomEvent("learning-path-created", {
-              detail: data.learningPath,
-            })
-          );
-          setIsFormOpen(false);
-          router.push(`/mentor/${data.learningPath.id}`);
+          // Phase 1: Skill assessment phase
+          if (data.phase === "skill_assessment" && data.requiredSkills) {
+            setSkillAssessment({
+              learningPath: data.learningPath,
+              requiredSkills: data.requiredSkills,
+            });
+            setShowSkillConfirmation(true);
+            setIsFormOpen(false);
+          } else {
+            // Direct curriculum generation (fallback)
+            window.dispatchEvent(
+              new CustomEvent("learning-path-created", {
+                detail: data.learningPath,
+              })
+            );
+            setIsFormOpen(false);
+            router.push(`/mentor/${data.learningPath.id}`);
+          }
         }
       } else {
         console.error("Failed to create learning path");
       }
     } catch (error) {
       console.error("Error creating learning path:", error);
+    }
+  };
+
+  // Phase 2: Generate curriculum with confirmed skills
+  const handleConfirmSkills = async (
+    confirmedSkills: Array<{
+      skill_name: string;
+      proficiency_level: string;
+      id?: string | null;
+    }>
+  ) => {
+    if (!userId || !skillAssessment) {
+      return;
+    }
+
+    setShowSkillConfirmation(false);
+
+    try {
+      const response = await apiFetch("/api/learning-paths", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: userId,
+          title: skillAssessment.learningPath.title,
+          goal: skillAssessment.learningPath.goal,
+          domain: skillAssessment.learningPath.domain,
+          subject: skillAssessment.learningPath.subject,
+          level: skillAssessment.learningPath.level,
+          learningPathId: skillAssessment.learningPath.id,
+          confirmedSkills,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.learningPath) {
+          window.dispatchEvent(
+            new CustomEvent("learning-path-created", {
+              detail: data.learningPath,
+            })
+          );
+          router.push(`/mentor/${data.learningPath.id}`);
+        }
+      } else {
+        console.error("Failed to generate curriculum");
+      }
+    } catch (error) {
+      console.error("Error generating curriculum:", error);
+    } finally {
+      setSkillAssessment(null);
     }
   };
 
@@ -839,6 +906,18 @@ export default function CourseSidebar({
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleCreateLearningPath}
       />
+
+      {skillAssessment && (
+        <SkillConfirmationDialog
+          isOpen={showSkillConfirmation}
+          onClose={() => {
+            setShowSkillConfirmation(false);
+            setSkillAssessment(null);
+          }}
+          requiredSkills={skillAssessment.requiredSkills}
+          onConfirm={handleConfirmSkills}
+        />
+      )}
 
       <DialogRoot
         open={!!confirmCourse}
