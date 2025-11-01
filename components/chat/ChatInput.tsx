@@ -1,4 +1,5 @@
 import { Box, Input, Button, Text } from "@chakra-ui/react";
+import { useColorMode } from "@/components/ui/color-mode";
 
 interface ChatInputProps {
   input: string;
@@ -23,6 +24,8 @@ export function ChatInput({
   user,
   onSubmit,
 }: ChatInputProps) {
+  const { colorMode } = useColorMode();
+  
   return (
     <Box
       position="sticky"
@@ -30,9 +33,9 @@ export function ChatInput({
       left={0}
       right={0}
       borderTop="1px solid"
-      borderColor="gray.700"
+      borderColor={colorMode === "dark" ? "gray.700" : "gray.200"}
       p={4}
-      bg="black"
+      bg={colorMode === "dark" ? "gray.900" : "white"}
       zIndex={2}
       flexShrink={0}
       minHeight="100px"
@@ -44,12 +47,12 @@ export function ChatInput({
           placeholder="Ask me anything..."
           mb={2}
           disabled={loading}
-          bg="gray.800"
-          color="white"
+          bg={colorMode === "dark" ? "gray.800" : "gray.100"}
+          color={colorMode === "dark" ? "white" : "black"}
           border="1px solid"
-          borderColor="gray.600"
-          _placeholder={{ color: "gray.500" }}
-          _hover={{ borderColor: "gray.500" }}
+          borderColor={colorMode === "dark" ? "gray.600" : "gray.300"}
+          _placeholder={{ color: colorMode === "dark" ? "gray.500" : "gray.400" }}
+          _hover={{ borderColor: colorMode === "dark" ? "gray.500" : "gray.400" }}
           _focus={{
             borderColor: "blue.400",
             boxShadow: "0 0 0 1px #4299E1",
@@ -74,7 +77,7 @@ export function ChatInput({
                 checked={enableWebSearch}
                 onChange={(e) => setEnableWebSearch(e.target.checked)}
               />
-              <Text fontSize="sm" ml={2} color="gray.300">
+              <Text fontSize="sm" ml={2} color={colorMode === "dark" ? "gray.300" : "gray.700"}>
                 Enable Web Search
               </Text>
             </Box>
@@ -88,7 +91,7 @@ export function ChatInput({
                   onChange={(e) => setSaveAsLongTerm(e.target.checked)}
                   disabled={!user}
                 />
-                <Text fontSize="sm" ml={2} color="gray.300">
+                <Text fontSize="sm" ml={2} color={colorMode === "dark" ? "gray.300" : "gray.700"}>
                   Remember the course
                 </Text>
               </Box>

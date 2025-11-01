@@ -1,21 +1,36 @@
 import { supabase } from "@/utils/supabase-client";
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  try {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-  const authHeader = session?.access_token
-    ? { Authorization: `Bearer ${session.access_token}` }
-    : {};
+    if (sessionError) {
+      console.error("Error getting session:", sessionError);
+    }
 
-  const headers = {
-    "Content-Type": "application/json",
-    ...(init.headers || {}),
-    ...authHeader,
-  } as Record<string, string>;
+    const authHeader = session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
 
-  return fetch(input, { ...init, headers });
+    const headers = {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+      ...authHeader,
+    } as Record<string, string>;
+
+    return fetch(input, { ...init, headers });
+  } catch (error) {
+    console.error("Error in apiFetch:", error);
+    // Return fetch without auth header if there's an error
+    const headers = {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    } as Record<string, string>;
+    return fetch(input, { ...init, headers });
+  }
 }
 
 

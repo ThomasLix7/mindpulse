@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 export default function Home() {
   const router = useRouter();
 
-  // Redirect to /chat on component mount
+  // Redirect to /mentor on component mount
   useEffect(() => {
-    router.replace("/chat");
+    router.replace("/mentor");
   }, [router]);
 
   // Return null while redirecting

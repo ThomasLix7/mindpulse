@@ -60,3 +60,9 @@ main {
   flex-direction: column;
   overflow-y: auto;
 }
+
+/* Dark mode select dropdown options */
+html.dark select option {
+  background-color: #000 !important;
+  color: #fff !important;
+}

@@ -201,7 +201,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
           );
 
           // Navigate to course
-          router.push(`/chat/${data.course.id}`);
+          router.push(`/mentor/${data.course.id}`);
 
           return data.course.id;
         }
@@ -272,7 +272,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
     setActiveCourseId(id);
     // Navigate to course page
     if (!isHomePage) {
-      router.push(`/chat/${id}`);
+      router.push(`/mentor/${id}`);
     }
   };
 

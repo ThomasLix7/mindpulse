@@ -1,7 +1,8 @@
 "use client";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Box, Button, Flex } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
+import { useColorMode } from "@/components/ui/color-mode";
 
 import { useCourses } from "@/hooks/useConversations";
 import { useMemory } from "@/hooks/useMemory";
@@ -10,15 +11,87 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatProps } from "@/types/chat";
+import { getCurrentUser, supabase } from "@/utils/supabase-client";
+import { apiFetch } from "@/utils/api-fetch";
 
 export default function ChatRefactored({
   courseId,
+  learningPathId,
   isHomePage = false,
 }: ChatProps) {
   const router = useRouter();
 
   // Auto-scroll ref
   const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Get or create course for learning path
+  const [resolvedCourseId, setResolvedCourseId] = useState<string | undefined>(
+    courseId
+  );
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    const initUser = async () => {
+      const { user } = await getCurrentUser();
+      setCurrentUser(user);
+    };
+    initUser();
+  }, []);
+
+  useEffect(() => {
+    const resolveCourse = async () => {
+      if (courseId) {
+        setResolvedCourseId(courseId);
+        return;
+      }
+
+      if (learningPathId && !courseId && currentUser?.id) {
+        try {
+          // Get courses in this learning path
+          const coursesResponse = await apiFetch(
+            `/api/courses?userId=${currentUser.id}`
+          );
+          if (!coursesResponse.ok) return;
+
+          const coursesData = await coursesResponse.json();
+          const pathCourses = coursesData.courses?.filter(
+            (c: any) => c.learning_path_id === learningPathId
+          );
+
+          if (pathCourses && pathCourses.length > 0) {
+            // Sort by course_order and use the first course (lowest order)
+            const sortedCourses = pathCourses.sort(
+              (a: any, b: any) => (a.course_order || 0) - (b.course_order || 0)
+            );
+            setResolvedCourseId(sortedCourses[0].id);
+          } else {
+            // Create a default course
+            const createResponse = await apiFetch("/api/courses", {
+              method: "POST",
+              body: JSON.stringify({
+                userId: currentUser.id,
+                title: "Main Course",
+                learningPathId,
+              }),
+            });
+
+            if (createResponse.ok) {
+              const createData = await createResponse.json();
+              if (createData.success && createData.course) {
+                setResolvedCourseId(createData.course.id);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error resolving course for learning path:", error);
+        }
+      }
+    };
+
+    if (currentUser?.id) {
+      resolveCourse();
+    }
+  }, [learningPathId, courseId, currentUser?.id]);
 
   // Custom hooks
   const {
@@ -32,7 +105,7 @@ export default function ChatRefactored({
     createNewCourse,
     renameCourse,
     clearCourse,
-  } = useCourses(courseId, isHomePage);
+  } = useCourses(resolvedCourseId, isHomePage);
 
   const { savingToLongTerm, forgetFromLongTermMemory, saveToLongTermMemory } =
     useMemory({
@@ -69,7 +142,10 @@ export default function ChatRefactored({
             return {
               ...course,
               title: updatedTitle,
-              history: [...course.history, { user: userMessage, ai: aiResponse }],
+              history: [
+                ...course.history,
+                { user: userMessage, ai: aiResponse },
+              ],
             };
           }
           return course;
@@ -107,14 +183,15 @@ export default function ChatRefactored({
   }, [courses, activeCourseId, getActiveCourse]);
 
   const activeCourse = getActiveCourse();
+  const { colorMode } = useColorMode();
 
   return (
     <Flex
       h="92vh"
       maxH="100vh"
       flexDirection="column"
-      bg="black"
-      color="white"
+      bg={colorMode === "dark" ? "gray.900" : "white"}
+      color={colorMode === "dark" ? "white" : "black"}
       overflow="hidden"
       position="absolute"
       bottom={0}
@@ -124,9 +201,7 @@ export default function ChatRefactored({
       {/* Chat Header */}
       <ChatHeader
         title={activeCourse.title}
-        onTitleUpdate={(newTitle) =>
-          renameCourse(activeCourseId, newTitle)
-        }
+        onTitleUpdate={(newTitle) => renameCourse(activeCourseId, newTitle)}
         onClearChat={clearCourse}
         hasHistory={activeCourse.history?.length > 0}
       />
@@ -146,7 +221,7 @@ export default function ChatRefactored({
             variant="outline"
             size="sm"
             colorScheme="blue"
-            onClick={() => router.push("/chat/new")}
+            onClick={() => router.push("/mentor/new")}
             display={{ base: "inline-flex", md: "none" }}
             borderColor="gray.600"
             color="gray.200"

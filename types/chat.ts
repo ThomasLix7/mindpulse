@@ -10,6 +10,7 @@ export interface Course {
 
 export interface ChatProps {
   courseId?: string;
+  learningPathId?: string;
   isHomePage?: boolean;
 }
 

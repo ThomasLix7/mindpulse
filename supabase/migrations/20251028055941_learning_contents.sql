@@ -5,8 +5,7 @@ CREATE TABLE courses (
   title TEXT NOT NULL,
   description TEXT,
   course_order INTEGER DEFAULT 0,
-  curriculum JSONB NOT NULL DEFAULT '{"modules": []}'::jsonb,
-  current_module_index INTEGER DEFAULT 0,
+  curriculum JSONB NOT NULL DEFAULT '{"lessons": []}'::jsonb,
   current_lesson_index INTEGER DEFAULT 0,
   current_topic_index INTEGER DEFAULT 0,
   current_topic_id TEXT,
@@ -219,10 +218,9 @@ RETURNS JSONB AS $$
 DECLARE
   path_record RECORD;
   current_topic JSONB;
-  module_obj JSONB;
   lesson_obj JSONB;
 BEGIN
-  SELECT curriculum, current_module_index, current_lesson_index, current_topic_index
+  SELECT curriculum, current_lesson_index, current_topic_index
   INTO path_record
   FROM courses
   WHERE id = course_id_param;
@@ -231,19 +229,14 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  IF path_record.curriculum->'modules' IS NOT NULL AND 
-     jsonb_array_length(path_record.curriculum->'modules') > path_record.current_module_index THEN
-    module_obj := path_record.curriculum->'modules'->path_record.current_module_index;
+  IF path_record.curriculum->'lessons' IS NOT NULL AND 
+     jsonb_array_length(path_record.curriculum->'lessons') > path_record.current_lesson_index THEN
+    lesson_obj := path_record.curriculum->'lessons'->path_record.current_lesson_index;
     
-    IF module_obj->'lessons' IS NOT NULL AND 
-       jsonb_array_length(module_obj->'lessons') > path_record.current_lesson_index THEN
-      lesson_obj := module_obj->'lessons'->path_record.current_lesson_index;
-      
-      IF lesson_obj->'topics' IS NOT NULL AND 
-         jsonb_array_length(lesson_obj->'topics') > path_record.current_topic_index THEN
-        current_topic := lesson_obj->'topics'->path_record.current_topic_index;
-        RETURN current_topic;
-      END IF;
+    IF lesson_obj->'topics' IS NOT NULL AND 
+       jsonb_array_length(lesson_obj->'topics') > path_record.current_topic_index THEN
+      current_topic := lesson_obj->'topics'->path_record.current_topic_index;
+      RETURN current_topic;
     END IF;
   END IF;
 

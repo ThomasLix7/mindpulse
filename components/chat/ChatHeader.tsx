@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Box, Input, Button, Heading, Flex } from "@chakra-ui/react";
+import { useColorMode } from "@/components/ui/color-mode";
 
 interface ChatHeaderProps {
   title: string;
@@ -14,6 +15,7 @@ export function ChatHeader({
   onClearChat,
   hasHistory,
 }: ChatHeaderProps) {
+  const { colorMode } = useColorMode();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [updatingTitle, setUpdatingTitle] = useState(false);
@@ -69,8 +71,8 @@ export function ChatHeader({
             size="md"
             fontSize="md"
             fontWeight="medium"
-            bg="gray.800"
-            color="white"
+            bg={colorMode === "dark" ? "gray.800" : "gray.100"}
+            color={colorMode === "dark" ? "white" : "black"}
             border="1px solid"
             borderColor="blue.400"
             mr={2}
@@ -100,7 +102,7 @@ export function ChatHeader({
         </Flex>
       ) : (
         <Flex alignItems="center">
-          <Heading size="md" fontWeight="medium" color="white">
+          <Heading size="md" fontWeight="medium" color={colorMode === "dark" ? "white" : "black"}>
             {title || "New Course"}
           </Heading>
           <Button
@@ -108,7 +110,7 @@ export function ChatHeader({
             variant="ghost"
             ml={2}
             onClick={startTitleEdit}
-            _hover={{ bg: "gray.700" }}
+            _hover={{ bg: colorMode === "dark" ? "gray.700" : "gray.200" }}
             title="Edit title"
           >
             ✐

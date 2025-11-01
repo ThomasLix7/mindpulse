@@ -380,7 +380,7 @@ export async function POST(request: Request) {
         title: title || "New Course",
         user_id: userId,
         learning_path_id: learningPathId,
-        curriculum: { modules: [] },
+        curriculum: { lessons: [] },
       })
       .select()
       .single();
