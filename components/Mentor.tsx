@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import { Box, Button, Flex } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
@@ -20,11 +20,7 @@ export default function ChatRefactored({
   isHomePage = false,
 }: ChatProps) {
   const router = useRouter();
-
-  // Auto-scroll ref
   const chatContainerRef = useRef<HTMLDivElement>(null);
-
-  // Get or create course for learning path
   const [resolvedCourseId, setResolvedCourseId] = useState<string | undefined>(
     courseId
   );
@@ -47,7 +43,6 @@ export default function ChatRefactored({
 
       if (learningPathId && !courseId && currentUser?.id) {
         try {
-          // Get courses in this learning path
           const coursesResponse = await apiFetch(
             `/api/courses?userId=${currentUser.id}`
           );
@@ -59,13 +54,11 @@ export default function ChatRefactored({
           );
 
           if (pathCourses && pathCourses.length > 0) {
-            // Sort by course_order and use the first course (lowest order)
             const sortedCourses = pathCourses.sort(
               (a: any, b: any) => (a.course_order || 0) - (b.course_order || 0)
             );
             setResolvedCourseId(sortedCourses[0].id);
           } else {
-            // Create a default course
             const createResponse = await apiFetch("/api/courses", {
               method: "POST",
               body: JSON.stringify({
@@ -93,7 +86,6 @@ export default function ChatRefactored({
     }
   }, [learningPathId, courseId, currentUser?.id]);
 
-  // Custom hooks
   const {
     courses,
     setCourses,
@@ -173,7 +165,129 @@ export default function ChatRefactored({
     isHomePage,
   });
 
-  // Auto-scroll to bottom when messages change
+  const greetingCheckedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (
+      !activeCourseId ||
+      activeCourseId === "new" ||
+      !authChecked ||
+      historyLoading ||
+      loading ||
+      !user?.id
+    ) {
+      return;
+    }
+
+    if (greetingCheckedRef.current.has(activeCourseId)) {
+      return;
+    }
+
+    const activeCourse = getActiveCourse();
+
+    if (!activeCourse || activeCourse.id !== activeCourseId) {
+      return;
+    }
+
+    // Send greeting for new course or continue summary for existing
+    const hasHistory = activeCourse.history && activeCourse.history.length > 0;
+    greetingCheckedRef.current.add(activeCourseId);
+
+    const sendInitialMessage = async () => {
+      try {
+        const res = await apiFetch("/api/chat", {
+          method: "POST",
+          body: JSON.stringify({
+            message: hasHistory ? "__CONTINUE__" : "__GREETING__",
+            courseId: activeCourseId,
+            userId: user.id,
+            isLongTerm: false,
+            enableWebSearch: false,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`API responded with status: ${res.status}`);
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          throw new Error("Response body reader could not be created");
+        }
+
+        const decoder = new TextDecoder();
+        let aiResponse = "";
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          while (buffer.length > 0) {
+            const char = buffer[0];
+            buffer = buffer.slice(1);
+
+            if (char === "d" && buffer.startsWith("ata: ")) {
+              buffer = buffer.slice(5);
+              const endIndex = buffer.indexOf("\n\n");
+              if (endIndex === -1) continue;
+
+              const jsonStr = buffer.slice(0, endIndex);
+              buffer = buffer.slice(endIndex + 2);
+
+              try {
+                const data = JSON.parse(jsonStr);
+                aiResponse += data.text;
+                setCourses((prev) =>
+                  prev.map((course) => {
+                    if (course.id === activeCourseId) {
+                      const lastMsg = course.history[course.history.length - 1];
+                      // Update existing message or create new one on first chunk
+                      if (lastMsg && lastMsg.user === "" && lastMsg.ai) {
+                        const updatedHistory = [...course.history];
+                        updatedHistory[updatedHistory.length - 1] = {
+                          user: "",
+                          ai: aiResponse,
+                        };
+                        return { ...course, history: updatedHistory };
+                      } else {
+                        return {
+                          ...course,
+                          history: [
+                            ...course.history,
+                            { user: "", ai: aiResponse },
+                          ],
+                        };
+                      }
+                    }
+                    return course;
+                  })
+                );
+              } catch (e) {
+                console.error("JSON parse error:", e);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error sending initial message:", error);
+        greetingCheckedRef.current.delete(activeCourseId);
+      }
+    };
+
+    sendInitialMessage();
+  }, [
+    activeCourseId,
+    authChecked,
+    historyLoading,
+    loading,
+    user?.id,
+    getActiveCourse,
+    setCourses,
+  ]);
+
   useEffect(() => {
     const activeCourse = getActiveCourse();
     if (chatContainerRef.current && activeCourse.history?.length > 0) {
@@ -184,6 +298,46 @@ export default function ChatRefactored({
 
   const activeCourse = getActiveCourse();
   const { colorMode } = useColorMode();
+  const [learningPathInfo, setLearningPathInfo] = useState<{
+    title: string;
+    courseOrder: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchLearningPathInfo = async () => {
+      if (!activeCourseId || !user?.id) return;
+
+      try {
+        const response = await apiFetch(
+          `/api/courses?userId=${user.id}&courseId=${activeCourseId}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.course?.learning_path_id) {
+            const pathResponse = await apiFetch(
+              `/api/learning-paths?userId=${user.id}&learningPathId=${data.course.learning_path_id}`
+            );
+            if (pathResponse.ok) {
+              const pathData = await pathResponse.json();
+              if (pathData.learningPath) {
+                setLearningPathInfo({
+                  title: pathData.learningPath.title,
+                  courseOrder: data.course.course_order || 0,
+                });
+                return;
+              }
+            }
+          }
+        }
+        setLearningPathInfo(null);
+      } catch (error) {
+        console.error("Error fetching learning path info:", error);
+        setLearningPathInfo(null);
+      }
+    };
+
+    fetchLearningPathInfo();
+  }, [activeCourseId, user?.id]);
 
   return (
     <Flex
@@ -198,15 +352,15 @@ export default function ChatRefactored({
       left={0}
       right={0}
     >
-      {/* Chat Header */}
       <ChatHeader
         title={activeCourse.title}
+        learningPathTitle={learningPathInfo?.title}
+        courseOrder={learningPathInfo?.courseOrder}
         onTitleUpdate={(newTitle) => renameCourse(activeCourseId, newTitle)}
         onClearChat={clearCourse}
         hasHistory={activeCourse.history?.length > 0}
       />
 
-      {/* Chat Content */}
       <Box
         position="relative"
         flex="1"
@@ -215,7 +369,6 @@ export default function ChatRefactored({
         ref={chatContainerRef}
         minHeight={0}
       >
-        {/* Mobile-only Chat Controls */}
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Button
             variant="outline"
@@ -231,7 +384,6 @@ export default function ChatRefactored({
           </Button>
         </Box>
 
-        {/* Messages */}
         <Box px={4} pb={4}>
           <MessageList
             course={activeCourse}
@@ -244,7 +396,6 @@ export default function ChatRefactored({
         </Box>
       </Box>
 
-      {/* Chat Input */}
       <ChatInput
         input={input}
         setInput={setInput}

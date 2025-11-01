@@ -41,16 +41,7 @@ export function MessageList({
     !course.history ||
     course.history.length === 0
   ) {
-    return (
-      <Box textAlign="center" py={6}>
-        <Text
-          fontSize="sm"
-          color={colorMode === "dark" ? "gray.400" : "gray.600"}
-        >
-          Start a new course below
-        </Text>
-      </Box>
-    );
+    return null;
   }
 
   return (

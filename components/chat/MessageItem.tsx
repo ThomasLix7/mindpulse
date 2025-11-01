@@ -85,7 +85,18 @@ export function MessageItem({
           )}
           {aiText && (
             <Box mt={2}>
-              <Text whiteSpace="pre-wrap">{aiText}</Text>
+              <Text whiteSpace="pre-wrap">
+                {aiText.split(/(\*\*.*?\*\*)/g).map((part, i) => {
+                  if (part.startsWith("**") && part.endsWith("**")) {
+                    return (
+                      <Text as="span" key={i} fontWeight="bold">
+                        {part.slice(2, -2)}
+                      </Text>
+                    );
+                  }
+                  return part;
+                })}
+              </Text>
             </Box>
           )}
         </Box>

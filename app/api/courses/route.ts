@@ -100,7 +100,11 @@ export async function GET(request: Request) {
       }
 
       // Get the history
-      const historyResponse = await getCourseHistory(courseId, userId);
+      const historyResponse = await getCourseHistory(
+        courseId,
+        userId,
+        accessToken
+      );
       const historyData = await historyResponse.json();
 
       // Return both the course and its history
@@ -141,7 +145,11 @@ export async function GET(request: Request) {
 
         const coursesWithHistory = await Promise.all(
           coursesToFetch.map(async (course) => {
-            const historyResponse = await getCourseHistory(course.id, userId);
+            const historyResponse = await getCourseHistory(
+              course.id,
+              userId,
+              accessToken
+            );
             const historyData = await historyResponse.json();
 
             return {
@@ -181,7 +189,11 @@ export async function GET(request: Request) {
   }
 }
 
-async function getCourseHistory(courseId: string, userId: string) {
+async function getCourseHistory(
+  courseId: string,
+  userId: string,
+  accessToken: string
+) {
   try {
     // Log that we're fetching history
     console.log(`Fetching history for course ${courseId} for user ${userId}`);
@@ -194,8 +206,8 @@ async function getCourseHistory(courseId: string, userId: string) {
       );
     }
 
-    // Initialize vector store
-    const vectorStore = await getVectorStore();
+    // Initialize vector store with accessToken for RLS
+    const vectorStore = await getVectorStore(accessToken);
     if (!vectorStore) {
       console.error("Vector store initialization failed");
       return NextResponse.json(
@@ -213,6 +225,54 @@ async function getCourseHistory(courseId: string, userId: string) {
     // Check if we have a proper vector store or just a Supabase client
     if (vectorStore instanceof SupabaseVectorStore) {
       const supabaseClient = (vectorStore as any).client;
+
+      // First, load messages from course_messages table
+      const { data: courseMessages, error: messagesError } =
+        await supabaseClient
+          .from("course_messages")
+          .select("role, content, created_at")
+          .eq("course_id", courseId)
+          .order("created_at", { ascending: true });
+
+      if (!messagesError && courseMessages && courseMessages.length > 0) {
+        // Convert course_messages to history format
+        // Messages are already in chronological order
+        let currentUserMessage = "";
+
+        for (const msg of courseMessages) {
+          if (msg.role === "user") {
+            // Save previous pair if exists
+            if (currentUserMessage) {
+              history.push({
+                userMessage: currentUserMessage,
+                aiResponse: "",
+                timestamp: Date.now(),
+                is_longterm: false,
+              });
+            }
+            currentUserMessage = msg.content;
+          } else if (msg.role === "assistant") {
+            // Pair with previous user message, or standalone if no user message (greeting)
+            history.push({
+              userMessage: currentUserMessage || "",
+              aiResponse: msg.content,
+              timestamp: new Date(msg.created_at).getTime(),
+              is_longterm: false,
+            });
+            currentUserMessage = "";
+          }
+        }
+
+        // Save any remaining user message without response
+        if (currentUserMessage) {
+          history.push({
+            userMessage: currentUserMessage,
+            aiResponse: "",
+            timestamp: Date.now(),
+            is_longterm: false,
+          });
+        }
+      }
 
       // Method 1: Use the dedicated course_id column
       const { data: columnResultRows, error: columnQueryError } =
@@ -257,6 +317,17 @@ async function getCourseHistory(courseId: string, userId: string) {
           console.log("No records found with either method");
         }
       }
+
+      // If we got messages from course_messages, return them
+      if (history.length > 0) {
+        return NextResponse.json({
+          history,
+          success: true,
+          isNewCourse: false,
+        });
+      }
+
+      // Otherwise, return empty if no memories found
       return NextResponse.json({
         history: [],
         success: true,

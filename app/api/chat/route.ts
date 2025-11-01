@@ -47,7 +47,14 @@ export async function POST(req: Request) {
       enableWebSearch = true,
     } = await req.json();
 
-    if (!message?.trim() || !courseId?.trim()) {
+    // Allow special messages: "__GREETING__" and "__CONTINUE__"
+    if (
+      !message ||
+      (message !== "__GREETING__" &&
+        message !== "__CONTINUE__" &&
+        !message.trim()) ||
+      !courseId?.trim()
+    ) {
       return NextResponse.json(
         { error: "Message and course ID are required" },
         { status: 400 }
@@ -88,17 +95,56 @@ export async function POST(req: Request) {
 
     let validatedUserId = userId;
 
-    // Save the user's message to course_messages immediately
-    try {
-      await supabase.from("course_messages").insert({
-        course_id: courseId,
-        role: "user",
-        content: message,
-        message_type: "text",
-      });
-    } catch (msgErr) {
-      console.error("Error inserting user message:", msgErr);
-      // continue; not critical for generating response
+    // Check if this is a special message
+    const isGreeting = message === "__GREETING__";
+    const isContinue = message === "__CONTINUE__";
+    const isSpecialMessage = isGreeting || isContinue;
+
+    // Save the user's message to course_messages immediately (unless it's a special message)
+    if (!isSpecialMessage) {
+      try {
+        await supabase.from("course_messages").insert({
+          course_id: courseId,
+          role: "user",
+          content: message,
+          message_type: "text",
+        });
+      } catch (msgErr) {
+        console.error("Error inserting user message:", msgErr);
+        // continue; not critical for generating response
+      }
+    }
+
+    let courseInfo: any = null;
+    if (isSpecialMessage) {
+      try {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select(
+            "title, description, curriculum, learning_path_id, course_order, current_lesson_index, current_topic_index"
+          )
+          .eq("id", courseId)
+          .eq("user_id", validatedUserId)
+          .single();
+
+        if (!courseError && course) {
+          courseInfo = course;
+
+          if (course.learning_path_id) {
+            const { data: learningPath } = await supabase
+              .from("learning_paths")
+              .select("title, goal")
+              .eq("id", course.learning_path_id)
+              .single();
+
+            if (learningPath) {
+              courseInfo.learning_path = learningPath;
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching course info:", error);
+      }
     }
 
     // Retrieve relevant memories for this user and query
@@ -275,7 +321,105 @@ export async function POST(req: Request) {
     // Create a stream
     const stream = new ReadableStream({
       async start(controller) {
-        const systemContext = `You are a helpful AI assistant that remembers past conversations to provide more personalized responses.`;
+        // Handle special messages (greeting or continue)
+        if (isSpecialMessage) {
+          const courseTitle =
+            courseInfo?.title?.replace(/^Course \d+:\s*/i, "") || "This Course";
+          const courseDesc = courseInfo?.description || "";
+          const learningPathInfo = courseInfo?.learning_path;
+          const courseOrder = courseInfo?.course_order ?? -1;
+          const lessons = courseInfo?.curriculum?.lessons || [];
+          const currentLessonIndex = courseInfo?.current_lesson_index ?? 0;
+          const currentTopicIndex = courseInfo?.current_topic_index ?? 0;
+
+          const courseDisplay =
+            courseOrder >= 0
+              ? `Course ${courseOrder + 1}: ${courseTitle}`
+              : courseTitle;
+          const learningPathDisplay = learningPathInfo
+            ? learningPathInfo.title.toUpperCase()
+            : "";
+
+          let systemContext = "";
+
+          if (isGreeting) {
+            systemContext = `You are an AI mentor. Greet the user starting this course.
+
+Include these as separate bold lines with line breaks before and after:
+**${courseDisplay}**
+**${learningPathDisplay || "[LEARNING PATH]"}**
+
+Course: ${courseTitle}${courseDesc ? ` - ${courseDesc}` : ""}
+${
+  learningPathInfo
+    ? `Learning Path: ${learningPathInfo.title} (Goal: ${learningPathInfo.goal})`
+    : ""
+}
+${
+  lessons.length > 0
+    ? `Lessons (${lessons.length}): ${lessons
+        .slice(0, 3)
+        .map((l: any) => l.title)
+        .join(", ")}${lessons.length > 3 ? "..." : ""}`
+    : ""
+}
+
+Be concise (2-3 short paragraphs). Briefly explain what they'll learn and ask "Ready to begin?"`;
+          } else if (isContinue) {
+            const currentLesson = lessons[currentLessonIndex];
+            const currentTopic = currentLesson?.topics?.[currentTopicIndex];
+
+            systemContext = `You are an AI mentor. Welcome back the student.
+
+Course: **${courseDisplay}**
+Learning Path: **${learningPathDisplay}**
+Current: Lesson ${currentLessonIndex + 1}${
+              currentLesson ? ` - ${currentLesson.title}` : ""
+            }${
+              currentTopic
+                ? `, Topic ${currentTopicIndex + 1} - ${currentTopic.title}`
+                : ""
+            }
+
+Recent context:
+${relevantMemories || "No previous context."}
+
+Be concise (1-2 short paragraphs). Briefly summarize their progress and ask "Ready to continue?"`;
+          }
+
+          const result = await chatSession.sendMessageStream(systemContext);
+          let fullResponse = "";
+
+          for await (const chunk of result.stream) {
+            const text = chunk.text();
+            fullResponse += text;
+
+            for (const char of text) {
+              controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
+              await new Promise((resolve) => setTimeout(resolve, 0.1));
+            }
+          }
+
+          // Save as an AI message
+          if (fullResponse) {
+            try {
+              await supabase.from("course_messages").insert({
+                course_id: courseId,
+                role: "assistant",
+                content: fullResponse,
+                message_type: "text",
+              });
+            } catch (msgErr) {
+              console.error("Error inserting special message:", msgErr);
+            }
+          }
+
+          controller.close();
+          return;
+        }
+
+        // Regular message handling
+        const systemContext = `You are an AI tutor. Be concise and direct. Answer questions clearly and briefly.`;
 
         // Get course summary
         let courseSummary = "";

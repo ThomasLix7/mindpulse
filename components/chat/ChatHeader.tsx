@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Box, Input, Button, Heading, Flex } from "@chakra-ui/react";
+import { Box, Input, Button, Heading, Flex, Badge, Text } from "@chakra-ui/react";
 import { useColorMode } from "@/components/ui/color-mode";
 
 interface ChatHeaderProps {
   title: string;
+  learningPathTitle?: string;
+  courseOrder?: number;
   onTitleUpdate: (newTitle: string) => Promise<void>;
   onClearChat: () => void;
   hasHistory: boolean;
@@ -11,6 +13,8 @@ interface ChatHeaderProps {
 
 export function ChatHeader({
   title,
+  learningPathTitle,
+  courseOrder,
   onTitleUpdate,
   onClearChat,
   hasHistory,
@@ -20,19 +24,17 @@ export function ChatHeader({
   const [newTitle, setNewTitle] = useState("");
   const [updatingTitle, setUpdatingTitle] = useState(false);
 
-  // Start title edit mode
+  const formatTitle = (courseTitle: string) => {
+    return courseTitle.replace(/^Course \d+:\s*/i, "");
+  };
+
+  const displayTitle = formatTitle(title);
+
   const startTitleEdit = () => {
-    setNewTitle(title);
+    setNewTitle(displayTitle);
     setIsEditingTitle(true);
   };
 
-  // Cancel title edit
-  const cancelTitleEdit = () => {
-    setIsEditingTitle(false);
-    setNewTitle("");
-  };
-
-  // Submit title update
   const submitTitleUpdate = async () => {
     if (!newTitle.trim()) {
       return;
@@ -101,10 +103,39 @@ export function ChatHeader({
           </Button>
         </Flex>
       ) : (
-        <Flex alignItems="center">
-          <Heading size="md" fontWeight="medium" color={colorMode === "dark" ? "white" : "black"}>
-            {title || "New Course"}
-          </Heading>
+        <Flex alignItems="center" flex="1" gap={3}>
+          {learningPathTitle ? (
+            <Box>
+              <Badge
+                colorScheme="purple"
+                fontSize="sm"
+                px={3}
+                py={1}
+                borderRadius="md"
+                fontWeight="semibold"
+                textTransform="uppercase"
+                mb={1}
+                display="block"
+              >
+                {learningPathTitle}
+              </Badge>
+              <Badge
+                colorScheme="blue"
+                fontSize="sm"
+                px={3}
+                py={1}
+                borderRadius="md"
+                fontWeight="semibold"
+              >
+                {courseOrder !== undefined && `Course ${courseOrder + 1}: `}
+                {displayTitle || "New Course"}
+              </Badge>
+            </Box>
+          ) : (
+            <Heading size="md" fontWeight="medium" color={colorMode === "dark" ? "white" : "black"}>
+              {displayTitle || "New Course"}
+            </Heading>
+          )}
           <Button
             size="sm"
             variant="ghost"
