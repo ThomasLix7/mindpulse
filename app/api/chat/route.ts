@@ -387,16 +387,40 @@ ${relevantMemories || "No previous context."}
 Be concise (1-2 short paragraphs). Briefly summarize their progress and ask "Ready to continue?"`;
           }
 
-          const result = await chatSession.sendMessageStream(systemContext);
           let fullResponse = "";
+          try {
+            const result = await chatSession.sendMessageStream(systemContext);
 
-          for await (const chunk of result.stream) {
-            const text = chunk.text();
-            fullResponse += text;
+            for await (const chunk of result.stream) {
+              const text = chunk.text();
+              fullResponse += text;
 
-            for (const char of text) {
+              for (const char of text) {
+                controller.enqueue(
+                  `data: ${JSON.stringify({ text: char })}\n\n`
+                );
+                await new Promise((resolve) => setTimeout(resolve, 0.1));
+              }
+            }
+          } catch (streamError: any) {
+            console.error("Error in streaming greeting:", streamError);
+            const errorMessage = streamError?.message || "An error occurred";
+            const isQuotaError =
+              errorMessage.includes("429") ||
+              errorMessage.includes("quota") ||
+              errorMessage.includes("Quota");
+
+            let errorMsg = "";
+            if (isQuotaError) {
+              errorMsg =
+                "I've reached my API usage limit for today. Please try again later.";
+            } else {
+              errorMsg = "Sorry, I encountered an error. Please try again.";
+            }
+
+            fullResponse = errorMsg;
+            for (const char of errorMsg) {
               controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
-              await new Promise((resolve) => setTimeout(resolve, 0.1));
             }
           }
 
@@ -463,21 +487,47 @@ ${
     : ""
 }`;
 
-        const result = await chatSession.sendMessageStream(enhancedMessage);
         let fullResponse = "";
+        try {
+          const result = await chatSession.sendMessageStream(enhancedMessage);
 
-        for await (const chunk of result.stream) {
-          const text = chunk.text();
-          fullResponse += text;
+          for await (const chunk of result.stream) {
+            const text = chunk.text();
+            fullResponse += text;
 
-          // Send each character individually
-          for (const char of text) {
+            // Send each character individually
+            for (const char of text) {
+              controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
+              await new Promise((resolve) => setTimeout(resolve, 0.1)); // Optional delay
+            }
+          }
+        } catch (streamError: any) {
+          console.error("Error in streaming response:", streamError);
+          const errorMessage =
+            streamError?.message ||
+            "An error occurred while generating the response";
+          const isQuotaError =
+            errorMessage.includes("429") ||
+            errorMessage.includes("quota") ||
+            errorMessage.includes("Quota");
+
+          let errorMsg = "";
+          if (isQuotaError) {
+            errorMsg =
+              "I've reached my API usage limit for today. Please try again later or contact support if you have a higher quota.";
+          } else {
+            errorMsg = "Sorry, I encountered an error. Please try again.";
+          }
+
+          fullResponse = errorMsg;
+          for (const char of errorMsg) {
             controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
-            await new Promise((resolve) => setTimeout(resolve, 0.1)); // Optional delay
           }
         }
 
-        updateCourseHistory(courseId, message, fullResponse);
+        if (fullResponse) {
+          updateCourseHistory(courseId, message, fullResponse);
+        }
 
         try {
           await supabase.from("course_messages").insert({

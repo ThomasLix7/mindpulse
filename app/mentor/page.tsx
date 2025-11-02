@@ -156,7 +156,7 @@ export default function ChatDefaultPage() {
     <Box h="100%" p={8} className="chat-page-container">
       {isCreating ? (
         <VStack gap={8} align="center" justify="center" h="100%">
-          <Spinner size="xl" color="blue.500" thickness="4px" />
+          <Spinner size="xl" color="blue.500" />
           <VStack gap={2} align="center">
             <Heading
               size="lg"
@@ -166,12 +166,7 @@ export default function ChatDefaultPage() {
             >
               Creating Your Learning Path
             </Heading>
-            <Text
-              fontSize="md"
-              color="gray.500"
-              textAlign="center"
-              maxW="lg"
-            >
+            <Text fontSize="md" color="gray.500" textAlign="center" maxW="lg">
               Generating your personalized curriculum... This may take a moment.
             </Text>
           </VStack>
