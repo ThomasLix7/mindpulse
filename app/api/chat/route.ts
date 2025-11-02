@@ -107,7 +107,6 @@ export async function POST(req: Request) {
       message,
       courseId,
       userId,
-      isLongTerm = false,
       enableWebSearch = true,
     } = await req.json();
 
@@ -512,22 +511,6 @@ ${
         }
 
         try {
-          if (isLongTerm && validatedUserId) {
-            const { saveMemory } = await import("@/utils/memory");
-            const success = await saveMemory(
-              courseId,
-              message,
-              fullResponse,
-              validatedUserId,
-              true,
-              accessToken
-            );
-            if (success) {
-              console.log(`Long-term memory saved for course: ${courseId}`);
-              invalidateMemoriesCache(courseId, validatedUserId);
-            }
-          }
-
           const { count } = await supabase
             .from("course_messages")
             .select("*", { count: "exact", head: true })

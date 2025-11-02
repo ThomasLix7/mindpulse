@@ -24,11 +24,11 @@ export async function recallMemory(
         try {
           const supabaseClient = (vectorStore as any).client;
 
-          // Get course summary
+          // Get course summary (short-term, course-specific)
           let courseSummary: any = null;
           const { data: summaryData } = await supabaseClient
             .from("ai_memories")
-            .select("content, metadata, created_at")
+            .select("id, content, metadata, created_at")
             .eq("course_id", courseId)
             .eq("user_id", userId)
             .eq("is_longterm", false)
@@ -41,40 +41,24 @@ export async function recallMemory(
             console.log("Retrieved course summary");
           }
 
-          // Get course long-term memories
-          const { data: courseData, error: convError } = await supabaseClient
-            .from("ai_memories")
-            .select("content, metadata, created_at")
-            .eq("course_id", courseId)
-            .eq("is_longterm", true)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (convError) {
-            console.error("Error fetching course memories:", convError);
-            return [];
-          }
-
-          let allResults = courseData || [];
-
-          if (courseSummary) {
-            allResults = [courseSummary, ...allResults];
-          }
-
-          // Also get long-term memories for this user using the new columns
+          // Get all long-term memories for this user (includes both course-specific and user-wide)
           const { data: longTermData, error: ltError } = await supabaseClient
             .from("ai_memories")
-            .select("content, metadata, created_at")
+            .select("id, content, metadata, created_at")
             .eq("user_id", userId)
             .eq("is_longterm", true)
             .order("created_at", { ascending: false })
             .limit(5);
 
-          if (!ltError && longTermData && longTermData.length > 0) {
-            console.log(
-              `Found ${longTermData.length} long-term memories for user ${userId}`
-            );
-            allResults = [...allResults, ...longTermData];
+          if (ltError) {
+            console.error("Error fetching long-term memories:", ltError);
+            return [];
+          }
+
+          let allResults = longTermData || [];
+
+          if (courseSummary) {
+            allResults = [courseSummary, ...allResults];
           }
 
           return allResults.map(
@@ -161,21 +145,25 @@ export async function recallMemory(
           }
         }
 
-        // Get course long-term memories
-        const { data: courseData, error: convError } = await vectorStore
-          .from("ai_memories")
-          .select("content, metadata, created_at")
-          .eq("course_id", courseId)
-          .eq("is_longterm", true)
-          .order("created_at", { ascending: false })
-          .limit(5);
+        // Get all long-term memories for this user (includes both course-specific and user-wide)
+        let results: any[] = [];
 
-        if (convError) {
-          console.error("Error fetching course memories:", convError);
-          return [];
+        if (userId) {
+          const { data: longTermData, error: ltError } = await vectorStore
+            .from("ai_memories")
+            .select("content, metadata, created_at")
+            .eq("user_id", userId)
+            .eq("is_longterm", true)
+            .order("created_at", { ascending: false })
+            .limit(5);
+
+          if (ltError) {
+            console.error("Error fetching long-term memories:", ltError);
+            return [];
+          }
+
+          results = longTermData || [];
         }
-
-        let results = courseData || [];
 
         if (courseSummary) {
           results = [
@@ -189,35 +177,6 @@ export async function recallMemory(
             ...results,
           ];
         }
-
-        if (userId) {
-          const { data: longTermData, error: ltError } = await vectorStore
-            .from("ai_memories")
-            .select("content, metadata, created_at")
-            .eq("user_id", userId)
-            .eq("is_longterm", true)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (!ltError && longTermData) {
-            console.log(
-              `Found ${longTermData.length} long-term memories for user ${userId}`
-            );
-            results = [...longTermData, ...results];
-          } else if (ltError) {
-            console.error("Error fetching user long-term memories:", ltError);
-          }
-        }
-
-        // Remove duplicates
-        results = results.filter(
-          (item, index, self) =>
-            index ===
-            self.findIndex(
-              (t) =>
-                t.content === item.content && t.created_at === item.created_at
-            )
-        );
 
         return results.map(
           (item) =>
