@@ -1,6 +1,95 @@
 import { getVectorStore } from "@/lib/vectorstore";
+import { createServerClient } from "@/utils/supabase-server";
 import { Document } from "@langchain/core/documents";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
+
+async function getCourseSummary(
+  client: any,
+  courseId: string,
+  userId: string
+): Promise<any | null> {
+  const { data: summaryData } = await client
+    .from("ai_memories")
+    .select("id, content, metadata, created_at")
+    .eq("course_id", courseId)
+    .eq("user_id", userId)
+    .eq("is_longterm", false)
+    .filter("metadata->>'type'", "eq", "course_summary")
+    .limit(1)
+    .single();
+
+  return summaryData || null;
+}
+
+async function getLongTermMemories(
+  vectorStore: any,
+  client: any,
+  query: string,
+  userId: string,
+  useVectorSearch: boolean
+): Promise<Document[]> {
+  if (useVectorSearch && vectorStore instanceof SupabaseVectorStore) {
+    try {
+      const searchResults = await vectorStore.similaritySearch(
+        query || "learning progress and important concepts",
+        5,
+        {
+          userId: userId,
+          isLongterm: true,
+        }
+      );
+      if (searchResults && searchResults.length > 0) {
+        console.log(
+          `Found ${searchResults.length} relevant memories via vector search`
+        );
+        return searchResults;
+      }
+    } catch (error) {
+      console.error("Vector search failed, falling back to recent:", error);
+    }
+  }
+
+  const { data: longTermData, error } = await client
+    .from("ai_memories")
+    .select("id, content, metadata, created_at")
+    .eq("user_id", userId)
+    .eq("is_longterm", true)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.error("Error fetching long-term memories:", error);
+    return [];
+  }
+
+  return (longTermData || []).map(
+    (item: any) =>
+      new Document({
+        pageContent: item.content,
+        metadata: {
+          ...item.metadata,
+          timestamp: item.created_at
+            ? new Date(item.created_at).getTime()
+            : Date.now(),
+        },
+      })
+  );
+}
+
+function mapToDocuments(items: any[]): Document[] {
+  return items.map(
+    (item: any) =>
+      new Document({
+        pageContent: item.content,
+        metadata: {
+          ...item.metadata,
+          timestamp: item.created_at
+            ? new Date(item.created_at).getTime()
+            : Date.now(),
+        },
+      })
+  );
+}
 
 export async function recallMemory(
   courseId: string,
@@ -19,184 +108,57 @@ export async function recallMemory(
       return [];
     }
 
-    if (vectorStore instanceof SupabaseVectorStore) {
-      if (userId) {
-        try {
-          const supabaseClient = (vectorStore as any).client;
+    const isVectorStore = vectorStore instanceof SupabaseVectorStore;
+    const client = isVectorStore ? (vectorStore as any).client : vectorStore;
 
-          // Get course summary (short-term, course-specific)
-          let courseSummary: any = null;
-          const { data: summaryData } = await supabaseClient
-            .from("ai_memories")
-            .select("id, content, metadata, created_at")
-            .eq("course_id", courseId)
-            .eq("user_id", userId)
-            .eq("is_longterm", false)
-            .filter("metadata->>'type'", "eq", "course_summary")
-            .limit(1)
-            .single();
+    if (!userId) {
+      const { data, error } = await client
+        .from("ai_memories")
+        .select("content, metadata, created_at")
+        .eq("course_id", courseId)
+        .order("created_at", { ascending: false })
+        .limit(5);
 
-          if (summaryData) {
-            courseSummary = summaryData;
-            console.log("Retrieved course summary");
-          }
-
-          // Get all long-term memories for this user (includes both course-specific and user-wide)
-          const { data: longTermData, error: ltError } = await supabaseClient
-            .from("ai_memories")
-            .select("id, content, metadata, created_at")
-            .eq("user_id", userId)
-            .eq("is_longterm", true)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (ltError) {
-            console.error("Error fetching long-term memories:", ltError);
-            return [];
-          }
-
-          let allResults = longTermData || [];
-
-          if (courseSummary) {
-            allResults = [courseSummary, ...allResults];
-          }
-
-          return allResults.map(
-            (item: any) =>
-              new Document({
-                pageContent: item.content,
-                metadata: {
-                  ...item.metadata,
-                  timestamp: item.created_at
-                    ? new Date(item.created_at).getTime()
-                    : Date.now(),
-                },
-              })
-          );
-        } catch (error) {
-          console.error("Error during vectorstore query:", error);
-          console.log("Falling back to direct Supabase queries");
-        }
-      } else {
-        try {
-          const supabaseClient = (vectorStore as any).client;
-          const { data, error } = await supabaseClient
-            .from("ai_memories")
-            .select("content, metadata, created_at")
-            .eq("course_id", courseId)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (error) {
-            console.error("Error fetching anonymous course memories:", error);
-            return [];
-          }
-
-          return (data || []).map(
-            (item: any) =>
-              new Document({
-                pageContent: item.content,
-                metadata: {
-                  ...item.metadata,
-                  timestamp: item.created_at
-                    ? new Date(item.created_at).getTime()
-                    : Date.now(),
-                },
-              })
-          );
-        } catch (error) {
-          console.error("Error during anonymous vectorstore query:", error);
-          console.log("Falling back to direct Supabase queries");
-        }
-      }
-    }
-
-    // Fallback or direct client case
-    if (vectorStore && "from" in vectorStore) {
-      console.log(
-        "⚠️ FALLBACK: Using direct Supabase queries for memory recall (no embeddings)"
-      );
-      try {
-        // Get course summary
-        let courseSummary: Document | null = null;
-        if (userId) {
-          const { data: summaryData } = await vectorStore
-            .from("ai_memories")
-            .select("content, metadata, created_at")
-            .eq("course_id", courseId)
-            .eq("user_id", userId)
-            .eq("is_longterm", false)
-            .filter("metadata->>'type'", "eq", "course_summary")
-            .limit(1)
-            .single();
-
-          if (summaryData) {
-            courseSummary = new Document({
-              pageContent: summaryData.content,
-              metadata: {
-                ...summaryData.metadata,
-                timestamp: summaryData.created_at
-                  ? new Date(summaryData.created_at).getTime()
-                  : Date.now(),
-                type: "course_summary",
-              },
-            });
-            console.log("Retrieved course summary");
-          }
-        }
-
-        // Get all long-term memories for this user (includes both course-specific and user-wide)
-        let results: any[] = [];
-
-        if (userId) {
-          const { data: longTermData, error: ltError } = await vectorStore
-            .from("ai_memories")
-            .select("content, metadata, created_at")
-            .eq("user_id", userId)
-            .eq("is_longterm", true)
-            .order("created_at", { ascending: false })
-            .limit(5);
-
-          if (ltError) {
-            console.error("Error fetching long-term memories:", ltError);
-            return [];
-          }
-
-          results = longTermData || [];
-        }
-
-        if (courseSummary) {
-          results = [
-            {
-              content: courseSummary.pageContent,
-              metadata: courseSummary.metadata,
-              created_at: new Date(
-                courseSummary.metadata.timestamp
-              ).toISOString(),
-            },
-            ...results,
-          ];
-        }
-
-        return results.map(
-          (item) =>
-            new Document({
-              pageContent: item.content,
-              metadata: {
-                ...item.metadata,
-                timestamp: item.created_at
-                  ? new Date(item.created_at).getTime()
-                  : Date.now(),
-              },
-            })
-        );
-      } catch (e) {
-        console.error("Error during memory recall:", e);
+      if (error) {
+        console.error("Error fetching anonymous course memories:", error);
         return [];
       }
+
+      return mapToDocuments(data || []);
     }
 
-    return [];
+    try {
+      const courseSummary = await getCourseSummary(client, courseId, userId);
+      const longTermMemories = await getLongTermMemories(
+        vectorStore,
+        client,
+        query,
+        userId,
+        isVectorStore
+      );
+
+      let allResults = longTermMemories || [];
+
+      if (courseSummary) {
+        allResults = [
+          new Document({
+            pageContent: courseSummary.content,
+            metadata: {
+              ...courseSummary.metadata,
+              timestamp: courseSummary.created_at
+                ? new Date(courseSummary.created_at).getTime()
+                : Date.now(),
+            },
+          }),
+          ...allResults,
+        ];
+      }
+
+      return allResults;
+    } catch (error) {
+      console.error("Error during memory recall:", error);
+      return [];
+    }
   } catch (error) {
     console.error("Error recalling memory:", error);
     return [];
@@ -205,7 +167,6 @@ export async function recallMemory(
 
 export async function recallLongTermMemory(
   userId: string,
-  query: string,
   accessToken?: string
 ): Promise<Document[]> {
   if (!userId) {
@@ -214,171 +175,51 @@ export async function recallLongTermMemory(
   }
 
   try {
-    console.log(`Recalling long-term memories for user: ${userId}`);
-    const vectorStore = await getVectorStore(accessToken);
-    if (!vectorStore) {
-      console.error("Vector store failed to initialize.");
-      return [];
-    }
+    const client = createServerClient(accessToken);
 
-    if (vectorStore instanceof SupabaseVectorStore) {
-      try {
-        const supabaseClient = (vectorStore as any).client;
+    const { data: columnData, error: columnError } = await client
+      .from("ai_memories")
+      .select("id, content, metadata, created_at")
+      .eq("user_id", userId)
+      .eq("is_longterm", true)
+      .order("created_at", { ascending: false });
 
-        const { data: columnData, error: columnError } = await supabaseClient
-          .from("ai_memories")
-          .select("id, content, metadata, created_at")
-          .eq("user_id", userId)
-          .eq("is_longterm", true)
-          .order("created_at", { ascending: false })
-          .limit(15);
-
-        if (columnError) {
-          console.error(
-            "Error fetching long-term memories by column:",
-            columnError
-          );
-        }
-
-        const { data: metadataData, error: metadataError } =
-          await supabaseClient
-            .from("ai_memories")
-            .select("id, content, metadata, created_at")
-            .eq("user_id", userId)
-            .filter("metadata->>'isLongterm'", "eq", "true")
-            .order("created_at", { ascending: false })
-            .limit(15);
-
-        if (metadataError) {
-          console.error(
-            "Error fetching long-term memories by metadata:",
-            metadataError
-          );
-        }
-
-        let combinedData: any[] = [];
-
-        if (columnData && columnData.length > 0) {
-          console.log(
-            `Found ${columnData.length} memories with is_longterm=true`
-          );
-          combinedData = [...columnData];
-        }
-
-        if (metadataData && metadataData.length > 0) {
-          console.log(
-            `Found ${metadataData.length} memories with metadata.isLongterm=true`
-          );
-          metadataData.forEach((item: any) => {
-            if (!combinedData.some((existing) => existing.id === item.id)) {
-              combinedData.push(item);
-            }
-          });
-        }
-
-        console.log(`Combined long-term memories: ${combinedData.length}`);
-
-        let results = combinedData || [];
-
-        return results.map(
-          (item: any) =>
-            new Document({
-              pageContent: item.content,
-              metadata: {
-                ...item.metadata,
-                timestamp: item.created_at
-                  ? new Date(item.created_at).getTime()
-                  : Date.now(),
-              },
-            })
-        );
-      } catch (error) {
-        console.error("Error during vectorstore long-term query:", error);
-        console.log(
-          "Falling back to direct Supabase queries for long-term memory"
-        );
-      }
-    }
-
-    // Fallback to using Supabase client directly
-    if (vectorStore && "from" in vectorStore) {
-      console.log(
-        "⚠️ FALLBACK: Using direct Supabase queries for long-term memory (no embeddings)"
+    if (columnError) {
+      console.error(
+        "Error fetching long-term memories by column:",
+        columnError
       );
-      try {
-        const { data: columnData, error: columnError } = await vectorStore
-          .from("ai_memories")
-          .select("id, content, metadata, created_at")
-          .eq("user_id", userId)
-          .eq("is_longterm", true)
-          .order("created_at", { ascending: false })
-          .limit(15);
-
-        if (columnError) {
-          console.error(
-            "Error fetching long-term memories by column:",
-            columnError
-          );
-        }
-
-        const { data: metadataData, error: metadataError } = await vectorStore
-          .from("ai_memories")
-          .select("id, content, metadata, created_at")
-          .eq("user_id", userId)
-          .filter("metadata->>'isLongterm'", "eq", "true")
-          .order("created_at", { ascending: false })
-          .limit(15);
-
-        if (metadataError) {
-          console.error(
-            "Error fetching long-term memories by metadata:",
-            metadataError
-          );
-        }
-
-        let combinedData: any[] = [];
-
-        if (columnData && columnData.length > 0) {
-          console.log(
-            `Found ${columnData.length} memories with is_longterm=true`
-          );
-          combinedData = [...columnData];
-        }
-
-        if (metadataData && metadataData.length > 0) {
-          console.log(
-            `Found ${metadataData.length} memories with metadata.isLongterm=true`
-          );
-          metadataData.forEach((item: any) => {
-            if (!combinedData.some((existing) => existing.id === item.id)) {
-              combinedData.push(item);
-            }
-          });
-        }
-
-        console.log(`Combined long-term memories: ${combinedData.length}`);
-
-        let results = combinedData || [];
-
-        return results.map(
-          (item) =>
-            new Document({
-              pageContent: item.content,
-              metadata: {
-                ...item.metadata,
-                timestamp: item.created_at
-                  ? new Date(item.created_at).getTime()
-                  : Date.now(),
-              },
-            })
-        );
-      } catch (e) {
-        console.error("Error during long-term memory recall:", e);
-        return [];
-      }
     }
 
-    return [];
+    const { data: metadataData, error: metadataError } = await client
+      .from("ai_memories")
+      .select("id, content, metadata, created_at")
+      .eq("user_id", userId)
+      .filter("metadata->>'isLongterm'", "eq", "true")
+      .order("created_at", { ascending: false });
+
+    if (metadataError) {
+      console.error(
+        "Error fetching long-term memories by metadata:",
+        metadataError
+      );
+    }
+
+    let combinedData: any[] = [];
+
+    if (columnData && columnData.length > 0) {
+      combinedData = [...columnData];
+    }
+
+    if (metadataData && metadataData.length > 0) {
+      metadataData.forEach((item: any) => {
+        if (!combinedData.some((existing) => existing.id === item.id)) {
+          combinedData.push(item);
+        }
+      });
+    }
+
+    return mapToDocuments(combinedData);
   } catch (error) {
     console.error("Error recalling long-term memory:", error);
     return [];
