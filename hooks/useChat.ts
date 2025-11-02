@@ -15,7 +15,6 @@ interface UseChatProps {
     aiResponse: string
   ) => void;
   updateStreamingResponse: (id: string, aiResponse: string) => void;
-  renameCourse: (id: string, newTitle: string) => Promise<void>;
   getActiveCourse: () => any;
   isHomePage?: boolean;
 }
@@ -28,18 +27,16 @@ export function useChat({
   createNewCourse,
   updateCourseHistory,
   updateStreamingResponse,
-  renameCourse,
   getActiveCourse,
   isHomePage = false,
 }: UseChatProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [saveAsLongTerm, setSaveAsLongTerm] = useState(false);
   const [enableWebSearch, setEnableWebSearch] = useState<boolean>(false);
   const router = useRouter();
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent, isLongTerm = false) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const userMessage = input;
     setInput("");
@@ -76,7 +73,7 @@ export function useChat({
           message: userMessage,
           courseId: courseId,
           userId: user?.id,
-          isLongTerm: isLongTerm,
+          isLongTerm: false,
           enableWebSearch: enableWebSearch,
         }),
       });
@@ -148,14 +145,6 @@ export function useChat({
           })
         );
 
-        // After successful completion, if this is the first message, update the course title
-        const activeCourse = getActiveCourse();
-        if (activeCourse.history.length === 1) {
-          const newTitle =
-            userMessage.substring(0, 30) +
-            (userMessage.length > 30 ? "..." : "");
-          await renameCourse(courseId, newTitle);
-        }
       }
     } catch (e) {
       console.error("Chat API or stream error:", e);
@@ -193,16 +182,14 @@ export function useChat({
     router.push("/login");
   };
 
-  return {
-    input,
-    setInput,
-    loading,
-    saveAsLongTerm,
-    setSaveAsLongTerm,
-    enableWebSearch,
-    setEnableWebSearch,
-    handleSubmit,
-    handleLogout,
-    handleLogin,
-  };
+    return {
+      input,
+      setInput,
+      loading,
+      enableWebSearch,
+      setEnableWebSearch,
+      handleSubmit,
+      handleLogout,
+      handleLogin,
+    };
 }

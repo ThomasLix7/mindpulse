@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
 
 import { useCourses } from "@/hooks/useConversations";
-import { useMemory } from "@/hooks/useMemory";
 import { useChat } from "@/hooks/useChat";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { MessageList } from "@/components/chat/MessageList";
@@ -95,23 +94,12 @@ export default function ChatRefactored({
     authChecked,
     getActiveCourse,
     createNewCourse,
-    renameCourse,
-    clearCourse,
   } = useCourses(resolvedCourseId, isHomePage);
-
-  const { savingToLongTerm, forgetFromLongTermMemory, saveToLongTermMemory } =
-    useMemory({
-      courses,
-      setCourses,
-      user,
-    });
 
   const {
     input,
     setInput,
     loading,
-    saveAsLongTerm,
-    setSaveAsLongTerm,
     enableWebSearch,
     setEnableWebSearch,
     handleSubmit,
@@ -160,7 +148,6 @@ export default function ChatRefactored({
         })
       );
     },
-    renameCourse,
     getActiveCourse,
     isHomePage,
   });
@@ -356,9 +343,6 @@ export default function ChatRefactored({
         title={activeCourse.title}
         learningPathTitle={learningPathInfo?.title}
         courseOrder={learningPathInfo?.courseOrder}
-        onTitleUpdate={(newTitle) => renameCourse(activeCourseId, newTitle)}
-        onClearChat={clearCourse}
-        hasHistory={activeCourse.history?.length > 0}
       />
 
       <Box
@@ -389,9 +373,6 @@ export default function ChatRefactored({
             course={activeCourse}
             historyLoading={historyLoading}
             user={user}
-            savingToLongTerm={savingToLongTerm}
-            onSaveToMemory={saveToLongTermMemory}
-            onForgetFromMemory={forgetFromLongTermMemory}
           />
         </Box>
       </Box>
@@ -400,8 +381,6 @@ export default function ChatRefactored({
         input={input}
         setInput={setInput}
         loading={loading}
-        saveAsLongTerm={saveAsLongTerm}
-        setSaveAsLongTerm={setSaveAsLongTerm}
         enableWebSearch={enableWebSearch}
         setEnableWebSearch={setEnableWebSearch}
         user={user}

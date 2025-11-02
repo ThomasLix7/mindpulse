@@ -5,20 +5,16 @@ interface ChatInputProps {
   input: string;
   setInput: (value: string) => void;
   loading: boolean;
-  saveAsLongTerm: boolean;
-  setSaveAsLongTerm: (value: boolean) => void;
   enableWebSearch: boolean;
   setEnableWebSearch: (value: boolean) => void;
   user: any;
-  onSubmit: (e: React.FormEvent, isLongTerm?: boolean) => void;
+  onSubmit: (e: React.FormEvent) => void;
 }
 
 export function ChatInput({
   input,
   setInput,
   loading,
-  saveAsLongTerm,
-  setSaveAsLongTerm,
   enableWebSearch,
   setEnableWebSearch,
   user,
@@ -40,7 +36,7 @@ export function ChatInput({
       flexShrink={0}
       minHeight="100px"
     >
-      <form onSubmit={(e) => onSubmit(e, saveAsLongTerm)}>
+      <form onSubmit={onSubmit}>
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -69,33 +65,16 @@ export function ChatInput({
             Send
           </Button>
 
-          <Box display="flex" alignItems="center" gap={4}>
-            <Box display="flex" alignItems="center">
-              <input
-                type="checkbox"
-                id="enableWebSearch"
-                checked={enableWebSearch}
-                onChange={(e) => setEnableWebSearch(e.target.checked)}
-              />
-              <Text fontSize="sm" ml={2} color={colorMode === "dark" ? "gray.300" : "gray.700"}>
-                Enable Web Search
-              </Text>
-            </Box>
-
-            {user && (
-              <Box display="flex" alignItems="center">
-                <input
-                  type="checkbox"
-                  id="saveToLongTerm"
-                  checked={saveAsLongTerm}
-                  onChange={(e) => setSaveAsLongTerm(e.target.checked)}
-                  disabled={!user}
-                />
-                <Text fontSize="sm" ml={2} color={colorMode === "dark" ? "gray.300" : "gray.700"}>
-                  Remember the course
-                </Text>
-              </Box>
-            )}
+          <Box display="flex" alignItems="center">
+            <input
+              type="checkbox"
+              id="enableWebSearch"
+              checked={enableWebSearch}
+              onChange={(e) => setEnableWebSearch(e.target.checked)}
+            />
+            <Text fontSize="sm" ml={2} color={colorMode === "dark" ? "gray.300" : "gray.700"}>
+              Enable Web Search
+            </Text>
           </Box>
         </Box>
       </form>

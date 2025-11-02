@@ -7,18 +7,12 @@ interface MessageListProps {
   course: Course | null;
   historyLoading: boolean;
   user: any;
-  savingToLongTerm: number | null;
-  onSaveToMemory: (courseId: string, messageIndex: number) => void;
-  onForgetFromMemory: (courseId: string, messageIndex: number) => void;
 }
 
 export function MessageList({
   course,
   historyLoading,
   user,
-  savingToLongTerm,
-  onSaveToMemory,
-  onForgetFromMemory,
 }: MessageListProps) {
   const { colorMode } = useColorMode();
 
@@ -53,9 +47,6 @@ export function MessageList({
           index={index}
           courseId={course.id}
           user={user}
-          savingToLongTerm={savingToLongTerm}
-          onSaveToMemory={onSaveToMemory}
-          onForgetFromMemory={onForgetFromMemory}
         />
       ))}
     </Box>

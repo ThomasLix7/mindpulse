@@ -477,65 +477,6 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
-  try {
-    const { id, title, userId } = await request.json();
-
-    if (!id || !userId) {
-      return NextResponse.json(
-        { error: "Course ID and User ID are required" },
-        { status: 400 }
-      );
-    }
-
-    // Verify the user owns this course
-    const supabase = await createServerClient();
-    const { data: existingCourse, error: fetchError } = await supabase
-      .from("courses")
-      .select("id")
-      .eq("id", id)
-      .eq("user_id", userId)
-      .single();
-
-    if (fetchError || !existingCourse) {
-      return NextResponse.json(
-        { error: "Course not found or access denied" },
-        { status: 403 }
-      );
-    }
-
-    // Update the course
-    const updateData: { title?: string } = {};
-    if (title !== undefined) updateData.title = title;
-
-    const { data, error } = await supabase
-      .from("courses")
-      .update(updateData)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error updating course:", error);
-      return NextResponse.json(
-        { error: "Failed to update course" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      course: data,
-      success: true,
-    });
-  } catch (error) {
-    console.error("API Error:", error);
-    return NextResponse.json(
-      { error: "Internal server error", success: false },
-      { status: 500 }
-    );
-  }
-}
-
 export async function DELETE(request: Request) {
   try {
     // Get the learning path ID and user ID from query params

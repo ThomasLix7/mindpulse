@@ -199,29 +199,6 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
     return null;
   };
 
-  const renameCourse = async (id: string, newTitle: string) => {
-    setCourses((prev) =>
-      prev.map((course) =>
-        course.id === id ? { ...course, title: newTitle } : course
-      )
-    );
-
-    if (user?.id) {
-      try {
-        await apiFetch("/api/courses", {
-          method: "PUT",
-          body: JSON.stringify({
-            id,
-            title: newTitle,
-            userId: user.id,
-          }),
-        });
-      } catch (error) {
-        console.error("Error updating course title on server:", error);
-      }
-    }
-  };
-
   const deleteCourse = async (id: string) => {
     setCourses((prev) => prev.filter((course) => course.id !== id));
 
@@ -295,29 +272,6 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
         return course;
       })
     );
-  };
-
-  const clearCourse = async () => {
-    setCourses((prev) =>
-      prev.map((course) =>
-        course.id === activeCourseId ? { ...course, history: [] } : course
-      )
-    );
-
-    if (user?.id) {
-      try {
-        await fetch(`/api/courses/clear`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            courseId: activeCourseId,
-            userId: user.id,
-          }),
-        });
-      } catch (error) {
-        console.error("Error clearing course history on server:", error);
-      }
-    }
   };
 
   const checkCourseExists = (id: string) => {
@@ -490,12 +444,10 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
     authChecked,
     getActiveCourse,
     createNewCourse,
-    renameCourse,
     deleteCourse,
     switchCourse,
     updateCourseHistory,
     updateStreamingResponse,
-    clearCourse,
     loadSpecificCourse,
   };
 }
