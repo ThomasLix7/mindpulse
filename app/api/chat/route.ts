@@ -6,6 +6,48 @@ import { createServerClient } from "@/utils/supabase-server";
 
 export const maxDuration = 30;
 
+const memoriesCache = new Map<
+  string,
+  { memories: string; timestamp: number }
+>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(courseId: string, userId: string): string {
+  return `${userId}_${courseId}`;
+}
+
+function getCachedMemories(courseId: string, userId: string): string | null {
+  const key = getCacheKey(courseId, userId);
+  const cached = memoriesCache.get(key);
+
+  if (!cached) return null;
+
+  const age = Date.now() - cached.timestamp;
+  if (age > CACHE_TTL) {
+    memoriesCache.delete(key);
+    return null;
+  }
+
+  return cached.memories;
+}
+
+function setCachedMemories(
+  courseId: string,
+  userId: string,
+  memories: string
+): void {
+  const key = getCacheKey(courseId, userId);
+  memoriesCache.set(key, {
+    memories,
+    timestamp: Date.now(),
+  });
+}
+
+function invalidateMemoriesCache(courseId: string, userId: string): void {
+  const key = getCacheKey(courseId, userId);
+  memoriesCache.delete(key);
+}
+
 async function loadCourseHistoryFromDatabase(
   courseId: string,
   supabase: any,
@@ -157,99 +199,109 @@ export async function POST(req: Request) {
       console.error("Error fetching course info:", error);
     }
 
-    let relevantMemories = "";
-    try {
-      const isPersonalInfoQuery =
-        message.toLowerCase().includes("name") ||
-        message.toLowerCase().includes("who am i") ||
-        message.toLowerCase().includes("about me") ||
-        message.toLowerCase().includes("remember me");
+    let relevantMemories = getCachedMemories(courseId, validatedUserId);
 
-      const memories = await recallMemory(
-        courseId,
-        message,
-        validatedUserId,
-        accessToken
-      );
+    if (!relevantMemories) {
+      try {
+        const isPersonalInfoQuery =
+          message.toLowerCase().includes("name") ||
+          message.toLowerCase().includes("who am i") ||
+          message.toLowerCase().includes("about me") ||
+          message.toLowerCase().includes("remember me");
 
-      let longTermMemories: any[] = [];
-      if (isPersonalInfoQuery && validatedUserId) {
-        try {
-          const { recallLongTermMemory } = await import("@/utils/memory");
-          longTermMemories = await recallLongTermMemory(
-            validatedUserId,
-            message,
-            accessToken
-          );
-          console.log(
-            `Also checked long-term memories directly, found ${longTermMemories.length}`
-          );
-        } catch (error) {
-          console.error("Error retrieving long-term memories directly:", error);
-        }
-      }
-
-      const allMemories = [
-        ...memories,
-        ...longTermMemories.filter(
-          (ltm) =>
-            !memories.some(
-              (m) =>
-                m.pageContent === ltm.pageContent &&
-                m.metadata.timestamp === ltm.metadata.timestamp
-            )
-        ),
-      ];
-
-      if (allMemories && allMemories.length > 0) {
-        const personalMemories = allMemories.filter(
-          (mem) =>
-            mem.pageContent.toLowerCase().includes("my name is") ||
-            mem.pageContent.toLowerCase().includes("i am ") ||
-            mem.pageContent.toLowerCase().includes("call me ") ||
-            (mem.pageContent.toLowerCase().includes("name") &&
-              mem.pageContent.toLowerCase().includes("thomas"))
+        const memories = await recallMemory(
+          courseId,
+          message,
+          validatedUserId,
+          accessToken
         );
 
-        console.log(
-          `Retrieved ${allMemories.length} total memories (${memories.length} from course, ${longTermMemories.length} from long-term storage)`
-        );
-
-        const longTermMemoriesCount = allMemories.filter(
-          (mem) => mem.metadata.isLongterm === true
-        ).length;
-
-        if (longTermMemoriesCount > 0) {
-          console.log(
-            `Found ${longTermMemoriesCount} long-term memories marked as isLongterm=true`
-          );
+        let longTermMemories: any[] = [];
+        if (isPersonalInfoQuery && validatedUserId) {
+          try {
+            const { recallLongTermMemory } = await import("@/utils/memory");
+            longTermMemories = await recallLongTermMemory(
+              validatedUserId,
+              message,
+              accessToken
+            );
+            console.log(
+              `Also checked long-term memories directly, found ${longTermMemories.length}`
+            );
+          } catch (error) {
+            console.error(
+              "Error retrieving long-term memories directly:",
+              error
+            );
+          }
         }
 
-        const formattedMemories = [
-          ...personalMemories.map((mem) => mem.pageContent),
-          ...allMemories
-            .filter((mem) => !personalMemories.includes(mem))
-            .map((mem) => mem.pageContent),
+        const allMemories = [
+          ...memories,
+          ...longTermMemories.filter(
+            (ltm) =>
+              !memories.some(
+                (m) =>
+                  m.pageContent === ltm.pageContent &&
+                  m.metadata.timestamp === ltm.metadata.timestamp
+              )
+          ),
         ];
 
-        relevantMemories =
-          "Previous relevant conversations (PAY SPECIAL ATTENTION TO THIS PERSONAL INFORMATION ABOUT THE USER):\n" +
-          formattedMemories.join("\n\n") +
-          "\n\n";
-
-        if (personalMemories.length > 0) {
-          console.log(
-            `Found ${personalMemories.length} memories with personal information`
+        if (allMemories && allMemories.length > 0) {
+          const personalMemories = allMemories.filter(
+            (mem) =>
+              mem.pageContent.toLowerCase().includes("my name is") ||
+              mem.pageContent.toLowerCase().includes("i am ") ||
+              mem.pageContent.toLowerCase().includes("call me ") ||
+              (mem.pageContent.toLowerCase().includes("name") &&
+                mem.pageContent.toLowerCase().includes("thomas"))
           );
+
+          console.log(
+            `Retrieved ${allMemories.length} total memories (${memories.length} from course, ${longTermMemories.length} from long-term storage)`
+          );
+
+          const longTermMemoriesCount = allMemories.filter(
+            (mem) => mem.metadata.isLongterm === true
+          ).length;
+
+          if (longTermMemoriesCount > 0) {
+            console.log(
+              `Found ${longTermMemoriesCount} long-term memories marked as isLongterm=true`
+            );
+          }
+
+          const formattedMemories = [
+            ...personalMemories.map((mem) => mem.pageContent),
+            ...allMemories
+              .filter((mem) => !personalMemories.includes(mem))
+              .map((mem) => mem.pageContent),
+          ];
+
+          relevantMemories =
+            "Previous relevant conversations (PAY SPECIAL ATTENTION TO THIS PERSONAL INFORMATION ABOUT THE USER):\n" +
+            formattedMemories.join("\n\n") +
+            "\n\n";
+
+          if (personalMemories.length > 0) {
+            console.log(
+              `Found ${personalMemories.length} memories with personal information`
+            );
+          }
+        } else {
+          console.log(`No relevant memories found for course: ${courseId}`);
         }
-      } else {
-        console.log(`No relevant memories found for course: ${courseId}`);
+
+        if (relevantMemories) {
+          setCachedMemories(courseId, validatedUserId, relevantMemories);
+        }
+      } catch (error) {
+        console.error(
+          "Error retrieving memories, continuing without them:",
+          error
+        );
       }
-    } catch (error) {
-      console.error(
-        "Error retrieving memories, continuing without them:",
-        error
-      );
     }
 
     const hasSerperKey = process.env.SERPER_API_KEY;
@@ -540,6 +592,7 @@ ${
             );
             if (success) {
               console.log(`Long-term memory saved for course: ${courseId}`);
+              invalidateMemoriesCache(courseId, validatedUserId);
             }
           }
 
@@ -554,6 +607,7 @@ ${
 
           if (shouldUpdateSummary && validatedUserId) {
             await saveCourseSummary(courseId, validatedUserId, accessToken);
+            invalidateMemoriesCache(courseId, validatedUserId);
           }
 
           await updateCourseTimestamp(courseId, accessToken);
