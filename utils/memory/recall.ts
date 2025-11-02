@@ -44,8 +44,11 @@ async function getLongTermMemories(
         );
         return searchResults;
       }
-    } catch (error) {
-      console.error("Vector search failed, falling back to recent:", error);
+    } catch (error: any) {
+      console.error(
+        "Vector search failed, falling back to recent:",
+        error?.message || error
+      );
     }
   }
 

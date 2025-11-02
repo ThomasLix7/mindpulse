@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
@@ -34,6 +34,8 @@ export function useChat({
   const [loading, setLoading] = useState(false);
   const [enableWebSearch, setEnableWebSearch] = useState<boolean>(false);
   const router = useRouter();
+  const streamingTextRef = useRef<Map<string, string>>(new Map());
+  const updateTimeoutRef = useRef<number | null>(null);
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,10 +116,18 @@ export function useChat({
 
             try {
               const data = JSON.parse(jsonStr);
-              aiResponse += data.text;
-
-              // Update streaming response
-              updateStreamingResponse(courseId, aiResponse);
+              if (data.text) {
+                aiResponse += data.text;
+                streamingTextRef.current.set(courseId, aiResponse);
+                if (updateTimeoutRef.current) {
+                  cancelAnimationFrame(updateTimeoutRef.current);
+                }
+                updateTimeoutRef.current = requestAnimationFrame(() => {
+                  const currentText =
+                    streamingTextRef.current.get(courseId) || "";
+                  updateStreamingResponse(courseId, currentText);
+                });
+              }
             } catch (e) {
               console.error("JSON parse error:", e);
             }
@@ -144,10 +154,12 @@ export function useChat({
             return course;
           })
         );
-
       }
     } catch (e) {
       console.error("Chat API or stream error:", e);
+      if (updateTimeoutRef.current) {
+        cancelAnimationFrame(updateTimeoutRef.current);
+      }
 
       // Show an error message in the UI by updating the current course
       setCourses((prev) =>
@@ -167,6 +179,9 @@ export function useChat({
         })
       );
     } finally {
+      if (updateTimeoutRef.current) {
+        cancelAnimationFrame(updateTimeoutRef.current);
+      }
       setLoading(false);
     }
   };
@@ -182,14 +197,14 @@ export function useChat({
     router.push("/login");
   };
 
-    return {
-      input,
-      setInput,
-      loading,
-      enableWebSearch,
-      setEnableWebSearch,
-      handleSubmit,
-      handleLogout,
-      handleLogin,
-    };
+  return {
+    input,
+    setInput,
+    loading,
+    enableWebSearch,
+    setEnableWebSearch,
+    handleSubmit,
+    handleLogout,
+    handleLogin,
+  };
 }

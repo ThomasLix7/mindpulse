@@ -58,7 +58,7 @@ async function loadCourseHistoryFromDatabase(
       .from("course_messages")
       .select("role, content, created_at")
       .eq("course_id", courseId)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(limit);
 
     if (error) {
@@ -71,6 +71,7 @@ async function loadCourseHistoryFromDatabase(
     }
 
     const formattedHistory: any[] = [];
+
     for (const msg of messages) {
       if (msg.role === "user") {
         formattedHistory.push({ role: "user", parts: [{ text: msg.content }] });
@@ -80,6 +81,12 @@ async function loadCourseHistoryFromDatabase(
           parts: [{ text: msg.content }],
         });
       }
+    }
+
+    formattedHistory.reverse();
+
+    if (formattedHistory.length > 0 && formattedHistory[0].role === "model") {
+      formattedHistory.unshift({ role: "user", parts: [{ text: "" }] });
     }
 
     return formattedHistory;
@@ -200,7 +207,7 @@ export async function POST(req: Request) {
 
     let relevantMemories = getCachedMemories(courseId, validatedUserId);
 
-    if (!relevantMemories) {
+    if (relevantMemories === null) {
       try {
         const memories = await recallMemory(
           courseId,
@@ -222,16 +229,18 @@ export async function POST(req: Request) {
           );
         } else {
           console.log(`No relevant memories found for course: ${courseId}`);
+          relevantMemories = "";
         }
 
-        if (relevantMemories) {
-          setCachedMemories(courseId, validatedUserId, relevantMemories);
-        }
-      } catch (error) {
+        setCachedMemories(courseId, validatedUserId, relevantMemories);
+      } catch (error: any) {
         console.error(
           "Error retrieving memories, continuing without them:",
           error
         );
+        const errorMessage = error?.message || "Unknown error";
+        relevantMemories = `Note: Error retrieving memory context: ${errorMessage}. Continuing without previous context.`;
+        setCachedMemories(courseId, validatedUserId, relevantMemories);
       }
     }
 

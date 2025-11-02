@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
@@ -26,6 +26,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
     new Set()
   );
   const router = useRouter();
+  const processedCoursesRef = useRef<Set<string>>(new Set());
 
   const getActiveCourse = () => {
     return (
@@ -60,26 +61,49 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       return;
     }
 
+    if (
+      processedCoursesRef.current.has(courseId) &&
+      activeCourseId === courseId
+    ) {
+      return;
+    }
+
+    const existingCourse = courses.find((c) => c.id === courseId);
+
     if (loadedCourseIds.has(courseId)) {
-      const existingCourse = courses.find((c) => c.id === courseId);
       if (existingCourse) {
-        setActiveCourseId(courseId);
-        setHistoryLoading(false);
+        if (activeCourseId !== courseId) {
+          setActiveCourseId(courseId);
+        }
+        if (historyLoading) {
+          setHistoryLoading(false);
+        }
+        processedCoursesRef.current.add(courseId);
         return;
       }
     }
 
-    const existingCourse = courses.find((c) => c.id === courseId);
     if (existingCourse && existingCourse.history !== undefined) {
-      setActiveCourseId(courseId);
-      setHistoryLoading(false);
-      setLoadedCourseIds((prev) => new Set(prev).add(courseId));
+      if (activeCourseId !== courseId) {
+        setActiveCourseId(courseId);
+      }
+      if (historyLoading) {
+        setHistoryLoading(false);
+      }
+      if (!loadedCourseIds.has(courseId)) {
+        setLoadedCourseIds((prev) => new Set(prev).add(courseId));
+      }
+      processedCoursesRef.current.add(courseId);
       return;
     }
 
     if (!loadedCourseIds.has(courseId)) {
-      setHistoryLoading(true);
-      setActiveCourseId(courseId);
+      if (!historyLoading) {
+        setHistoryLoading(true);
+      }
+      if (activeCourseId !== courseId) {
+        setActiveCourseId(courseId);
+      }
       sessionStorage.removeItem(`checked-empty-${courseId}`);
       setLoadedCourseIds((prev) => new Set(prev).add(courseId));
 
@@ -87,7 +111,14 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
         .then(() => setHistoryLoading(false))
         .catch(() => setHistoryLoading(false));
     }
-  }, [courseId, user?.id, authChecked, loadedCourseIds, courses]);
+  }, [
+    courseId,
+    user?.id,
+    authChecked,
+    loadedCourseIds,
+    activeCourseId,
+    historyLoading,
+  ]);
 
   const loadCourses = async (userId?: string) => {
     setHistoryLoading(true);

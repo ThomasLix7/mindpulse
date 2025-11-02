@@ -35,7 +35,8 @@ export async function getVectorStore(accessToken?: string) {
     if (googleApiKey) {
       embeddings = new GoogleGenerativeAIEmbeddings({
         apiKey: googleApiKey,
-        modelName: "embedding-001", // or whatever model you prefer
+        modelName: "embedding-001",
+        maxRetries: 0,
       });
     } else if (openaiApiKey) {
       embeddings = new OpenAIEmbeddings({
@@ -239,21 +240,34 @@ export async function getVectorStore(accessToken?: string) {
       try {
         // Try the original method first
         return await originalSimilaritySearch(query, k, filter);
-      } catch (error) {
-        console.error("Error in vector similarity search:", error);
+      } catch (error: any) {
+        console.error(
+          "Vector search failed, falling back to text search:",
+          error?.message || error
+        );
 
         // Fallback to direct SQL query for text search
         console.log("Falling back to text-based search");
         try {
-          // Extract filter criteria if provided
           let queryBuilder = client
             .from("ai_memories")
-            .select("id, content, metadata");
+            .select("id, content, metadata, created_at");
 
           if (filter) {
-            const conditions = [];
+            // Handle userId filter - use column first, then metadata as fallback
+            if ((filter as any).userId) {
+              queryBuilder = queryBuilder.eq("user_id", (filter as any).userId);
+            }
 
-            // Handle courseId filter (with backward compatibility for conversationId)
+            // Handle isLongterm filter - use column first, then metadata as fallback
+            if ((filter as any).isLongterm !== undefined) {
+              queryBuilder = queryBuilder.eq(
+                "is_longterm",
+                (filter as any).isLongterm
+              );
+            }
+
+            // Handle courseId filter (metadata only, as it's not a column)
             if ((filter as any).courseId) {
               queryBuilder = queryBuilder.filter(
                 "metadata->>courseId",
@@ -268,32 +282,11 @@ export async function getVectorStore(accessToken?: string) {
                 (filter as any).conversationId
               );
             }
-
-            // Handle userId filter
-            if ((filter as any).userId) {
-              queryBuilder = queryBuilder.filter(
-                "metadata->>userId",
-                "eq",
-                (filter as any).userId
-              );
-            }
-
-            // Handle isLongterm filter
-            if ((filter as any).isLongterm !== undefined) {
-              const isLongtermValue = (filter as any).isLongterm
-                ? "true"
-                : "false";
-              queryBuilder = queryBuilder.filter(
-                "metadata->>isLongterm",
-                "eq",
-                isLongtermValue
-              );
-            }
           }
 
           // Use direct query with the client
           const { data, error } = await queryBuilder
-            .order("id", { ascending: false })
+            .order("created_at", { ascending: false })
             .limit(k);
 
           if (error) {
@@ -306,7 +299,12 @@ export async function getVectorStore(accessToken?: string) {
             (item: any) =>
               new Document({
                 pageContent: item.content,
-                metadata: item.metadata || {},
+                metadata: {
+                  ...(item.metadata || {}),
+                  timestamp: item.created_at
+                    ? new Date(item.created_at).getTime()
+                    : Date.now(),
+                },
               })
           );
         } catch (fallbackError) {
