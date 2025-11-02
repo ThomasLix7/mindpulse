@@ -3,7 +3,6 @@ import { model } from "@/lib/gemini";
 import { webTools } from "@/tools/webSearch";
 import { recallMemory, saveCourseSummary } from "@/utils/memory";
 import { createServerClient } from "@/utils/supabase-server";
-import { getVectorStore } from "@/lib/vectorstore";
 
 export const maxDuration = 30;
 
@@ -496,37 +495,8 @@ If you asked a question before, check if they answered it and build upon their r
 Your role is to actively guide, challenge, and advance the student through the course material systematically. 
 Lead the learning - don't just respond, drive the progress - but STAY ON TRACK with the lesson and MAINTAIN CONVERSATION CONTINUITY.${lessonContext}`;
 
-        let courseSummary = "";
-        try {
-          const vectorStore = await getVectorStore(accessToken);
-          if (vectorStore && "from" in vectorStore) {
-            const { data: summaryData } = await vectorStore
-              .from("ai_memories")
-              .select("content")
-              .eq("course_id", courseId)
-              .eq("user_id", validatedUserId)
-              .eq("is_longterm", false)
-              .filter("metadata->>'type'", "eq", "course_summary")
-              .limit(1)
-              .single();
-
-            if (summaryData) {
-              courseSummary = summaryData.content;
-              console.log("Retrieved course summary");
-            }
-          }
-        } catch (error) {
-          console.error("Error retrieving course summary:", error);
-        }
-
         const enhancedMessage = `${systemContext}
         
-${
-  courseSummary
-    ? `\nCourse Context for this conversation:\n${courseSummary}\n\n`
-    : ""
-}
-
 ${relevantMemories ? relevantMemories : ""}
 
 Current message: ${message}
