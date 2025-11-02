@@ -410,24 +410,10 @@ Take charge of the learning - guide, challenge, and advance them through the mat
             }
           } catch (streamError: any) {
             console.error("Error in streaming greeting:", streamError);
-            const errorMessage = streamError?.message || "An error occurred";
-            const isQuotaError =
-              errorMessage.includes("429") ||
-              errorMessage.includes("quota") ||
-              errorMessage.includes("Quota");
-
-            let errorMsg = "";
-            if (isQuotaError) {
-              errorMsg =
-                "I've reached my API usage limit for today. Please try again later.";
-            } else {
-              errorMsg = "Sorry, I encountered an error. Please try again.";
-            }
-
-            fullResponse = errorMsg;
-            for (const char of errorMsg) {
-              controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
-            }
+            fullResponse = streamError?.message || "An error occurred";
+            controller.enqueue(
+              `data: ${JSON.stringify({ text: fullResponse })}\n\n`
+            );
           }
 
           if (fullResponse) {
@@ -522,26 +508,12 @@ ${
           }
         } catch (streamError: any) {
           console.error("Error in streaming response:", streamError);
-          const errorMessage =
+          fullResponse =
             streamError?.message ||
             "An error occurred while generating the response";
-          const isQuotaError =
-            errorMessage.includes("429") ||
-            errorMessage.includes("quota") ||
-            errorMessage.includes("Quota");
-
-          let errorMsg = "";
-          if (isQuotaError) {
-            errorMsg =
-              "I've reached my API usage limit for today. Please try again later or contact support if you have a higher quota.";
-          } else {
-            errorMsg = "Sorry, I encountered an error. Please try again.";
-          }
-
-          fullResponse = errorMsg;
-          for (const char of errorMsg) {
-            controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
-          }
+          controller.enqueue(
+            `data: ${JSON.stringify({ text: fullResponse })}\n\n`
+          );
         }
 
         try {
