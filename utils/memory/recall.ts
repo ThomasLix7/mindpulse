@@ -77,40 +77,6 @@ export async function recallMemory(
             allResults = [...allResults, ...longTermData];
           }
 
-          // Special handling for personal information queries
-          if (
-            query.toLowerCase().includes("name") ||
-            query.toLowerCase().includes("who am i") ||
-            query.toLowerCase().includes("about me")
-          ) {
-            const { data: nameData, error: nameError } = await supabaseClient
-              .from("ai_memories")
-              .select("id, content, metadata, created_at")
-              .eq("user_id", userId)
-              .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
-              .or(
-                "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
-              )
-              .order("created_at", { ascending: false })
-              .limit(10);
-
-            if (!nameError && nameData && nameData.length > 0) {
-              console.log(`Found ${nameData.length} personal info memories`);
-
-              allResults = [
-                ...nameData,
-                ...allResults.filter(
-                  (item: any) =>
-                    !nameData.some(
-                      (p: any) =>
-                        p.content === item.content &&
-                        p.created_at === item.created_at
-                    )
-                ),
-              ];
-            }
-          }
-
           return allResults.map(
             (item: any) =>
               new Document({
@@ -241,41 +207,6 @@ export async function recallMemory(
           } else if (ltError) {
             console.error("Error fetching user long-term memories:", ltError);
           }
-
-          if (
-            query.toLowerCase().includes("name") ||
-            query.toLowerCase().includes("who am i") ||
-            query.toLowerCase().includes("about me") ||
-            query.toLowerCase().includes("remember me")
-          ) {
-            const { data: nameData, error: nameError } = await vectorStore
-              .from("ai_memories")
-              .select("id, content, metadata, created_at")
-              .eq("user_id", userId)
-              .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
-              .or(
-                "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
-              )
-              .order("created_at", { ascending: false })
-              .limit(10);
-
-            if (!nameError && nameData && nameData.length > 0) {
-              console.log(
-                `Found ${nameData.length} memories with personal information`
-              );
-              results = [
-                ...nameData,
-                ...results.filter(
-                  (item) =>
-                    !nameData.some(
-                      (p) =>
-                        p.content === item.content &&
-                        p.created_at === item.created_at
-                    )
-                ),
-              ];
-            }
-          }
         }
 
         // Remove duplicates
@@ -390,42 +321,6 @@ export async function recallLongTermMemory(
 
         let results = combinedData || [];
 
-        if (
-          query.toLowerCase().includes("name") ||
-          query.toLowerCase().includes("who am i") ||
-          query.toLowerCase().includes("about me") ||
-          query.toLowerCase().includes("remember me")
-        ) {
-          const { data: nameData, error: nameError } = await supabaseClient
-            .from("ai_memories")
-            .select("id, content, metadata, created_at")
-            .eq("user_id", userId)
-            .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
-            .or(
-              "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
-            )
-            .order("created_at", { ascending: false })
-            .limit(10);
-
-          if (!nameError && nameData && nameData.length > 0) {
-            console.log(
-              `Found ${nameData.length} personal info memories in long-term memory`
-            );
-
-            results = [
-              ...nameData,
-              ...results.filter(
-                (item: any) =>
-                  !nameData.some(
-                    (p: any) =>
-                      p.content === item.content &&
-                      p.created_at === item.created_at
-                  )
-              ),
-            ];
-          }
-        }
-
         return results.map(
           (item: any) =>
             new Document({
@@ -505,42 +400,6 @@ export async function recallLongTermMemory(
         console.log(`Combined long-term memories: ${combinedData.length}`);
 
         let results = combinedData || [];
-
-        if (
-          query.toLowerCase().includes("name") ||
-          query.toLowerCase().includes("who am i") ||
-          query.toLowerCase().includes("about me") ||
-          query.toLowerCase().includes("remember me")
-        ) {
-          const { data: nameData, error: nameError } = await vectorStore
-            .from("ai_memories")
-            .select("id, content, metadata, created_at")
-            .eq("user_id", userId)
-            .or(`is_longterm.eq.true,metadata->>'isLongterm'.eq.true`)
-            .or(
-              "content.ilike.%my name is%,content.ilike.%name%,content.ilike.%i am%,content.ilike.%call me%"
-            )
-            .order("created_at", { ascending: false })
-            .limit(10);
-
-          if (!nameError && nameData && nameData.length > 0) {
-            console.log(
-              `Found ${nameData.length} personal info memories in long-term memory`
-            );
-
-            results = [
-              ...nameData,
-              ...results.filter(
-                (item: any) =>
-                  !nameData.some(
-                    (p: any) =>
-                      p.content === item.content &&
-                      p.created_at === item.created_at
-                  )
-              ),
-            ];
-          }
-        }
 
         return results.map(
           (item) =>

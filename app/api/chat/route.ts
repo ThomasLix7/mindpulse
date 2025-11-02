@@ -203,12 +203,6 @@ export async function POST(req: Request) {
 
     if (!relevantMemories) {
       try {
-        const isPersonalInfoQuery =
-          message.toLowerCase().includes("name") ||
-          message.toLowerCase().includes("who am i") ||
-          message.toLowerCase().includes("about me") ||
-          message.toLowerCase().includes("remember me");
-
         const memories = await recallMemory(
           courseId,
           message,
@@ -216,79 +210,17 @@ export async function POST(req: Request) {
           accessToken
         );
 
-        let longTermMemories: any[] = [];
-        if (isPersonalInfoQuery && validatedUserId) {
-          try {
-            const { recallLongTermMemory } = await import("@/utils/memory");
-            longTermMemories = await recallLongTermMemory(
-              validatedUserId,
-              message,
-              accessToken
-            );
-            console.log(
-              `Also checked long-term memories directly, found ${longTermMemories.length}`
-            );
-          } catch (error) {
-            console.error(
-              "Error retrieving long-term memories directly:",
-              error
-            );
-          }
-        }
-
-        const allMemories = [
-          ...memories,
-          ...longTermMemories.filter(
-            (ltm) =>
-              !memories.some(
-                (m) =>
-                  m.pageContent === ltm.pageContent &&
-                  m.metadata.timestamp === ltm.metadata.timestamp
-              )
-          ),
-        ];
-
-        if (allMemories && allMemories.length > 0) {
-          const personalMemories = allMemories.filter(
-            (mem) =>
-              mem.pageContent.toLowerCase().includes("my name is") ||
-              mem.pageContent.toLowerCase().includes("i am ") ||
-              mem.pageContent.toLowerCase().includes("call me ") ||
-              (mem.pageContent.toLowerCase().includes("name") &&
-                mem.pageContent.toLowerCase().includes("thomas"))
-          );
-
-          console.log(
-            `Retrieved ${allMemories.length} total memories (${memories.length} from course, ${longTermMemories.length} from long-term storage)`
-          );
-
-          const longTermMemoriesCount = allMemories.filter(
-            (mem) => mem.metadata.isLongterm === true
-          ).length;
-
-          if (longTermMemoriesCount > 0) {
-            console.log(
-              `Found ${longTermMemoriesCount} long-term memories marked as isLongterm=true`
-            );
-          }
-
-          const formattedMemories = [
-            ...personalMemories.map((mem) => mem.pageContent),
-            ...allMemories
-              .filter((mem) => !personalMemories.includes(mem))
-              .map((mem) => mem.pageContent),
-          ];
+        if (memories && memories.length > 0) {
+          const formattedMemories = memories.map((mem) => mem.pageContent);
 
           relevantMemories =
-            "Previous relevant conversations (PAY SPECIAL ATTENTION TO THIS PERSONAL INFORMATION ABOUT THE USER):\n" +
+            "Previous relevant conversations:\n" +
             formattedMemories.join("\n\n") +
             "\n\n";
 
-          if (personalMemories.length > 0) {
-            console.log(
-              `Found ${personalMemories.length} memories with personal information`
-            );
-          }
+          console.log(
+            `Retrieved ${memories.length} memories for course: ${courseId}`
+          );
         } else {
           console.log(`No relevant memories found for course: ${courseId}`);
         }
