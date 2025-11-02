@@ -156,7 +156,7 @@ RELEVANT MEMORIES:
 ${context.memories.join("\n")}
 
 CRITICAL INSTRUCTIONS:
-1. Start from the user's CURRENT LEVEL (${currentLevel}), not the target level. The first course must build upon what the user already knows and can do.
+1. Start from the user's CURRENT LEVEL (${currentLevel}), not the target level. The courses must build upon what the user already knows and can do.
 2. Progressively advance through the curriculum from ${currentLevel} → medium → advanced → expert (or appropriate progression) until reaching the TARGET LEVEL (${targetLevel}).
 3. The first course should review and reinforce foundational concepts relevant to the user's current skills, then gradually introduce new concepts.
 4. Each subsequent course should build on the previous one, creating a logical learning progression.
@@ -240,13 +240,10 @@ async function createCoursesFromCurriculum(
       })),
     };
 
-    // Strip any "Course X:" prefix from title if present
-    const cleanTitle = courseData.title.replace(/^Course \d+:\s*/i, "").trim();
-
     const { data: course, error: courseError } = await supabase
       .from("courses")
       .insert({
-        title: cleanTitle,
+        title: courseData.title,
         description: courseData.description,
         learning_path_id: learningPathId,
         user_id: userId,

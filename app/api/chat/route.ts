@@ -1,27 +1,51 @@
 import { NextResponse } from "next/server";
 import { model } from "@/lib/gemini";
 import { webTools } from "@/tools/webSearch";
-import { saveMemory, recallMemory, saveCourseSummary } from "@/utils/memory";
+import { recallMemory, saveCourseSummary } from "@/utils/memory";
 import { createServerClient } from "@/utils/supabase-server";
 import { getVectorStore } from "@/lib/vectorstore";
 
 export const maxDuration = 30;
 
-const courseHistory = new Map<string, any[]>();
-
-function getCourseHistory(courseId: string) {
-  return courseHistory.get(courseId) || [];
-}
-
-function updateCourseHistory(
+async function loadCourseHistoryFromDatabase(
   courseId: string,
-  userMessage: string,
-  aiResponse: string
-) {
-  const history = getCourseHistory(courseId);
-  history.push({ role: "user", parts: [{ text: userMessage }] });
-  history.push({ role: "model", parts: [{ text: aiResponse }] });
-  courseHistory.set(courseId, history);
+  supabase: any,
+  limit: number = 20
+): Promise<any[]> {
+  try {
+    const { data: messages, error } = await supabase
+      .from("course_messages")
+      .select("role, content, created_at")
+      .eq("course_id", courseId)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+
+    if (error) {
+      console.error("Error loading course history:", error);
+      return [];
+    }
+
+    if (!messages || messages.length === 0) {
+      return [];
+    }
+
+    const formattedHistory: any[] = [];
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        formattedHistory.push({ role: "user", parts: [{ text: msg.content }] });
+      } else if (msg.role === "assistant") {
+        formattedHistory.push({
+          role: "model",
+          parts: [{ text: msg.content }],
+        });
+      }
+    }
+
+    return formattedHistory;
+  } catch (error) {
+    console.error("Error in loadCourseHistoryFromDatabase:", error);
+    return [];
+  }
 }
 
 async function updateCourseTimestamp(courseId: string, accessToken?: string) {
@@ -33,7 +57,6 @@ async function updateCourseTimestamp(courseId: string, accessToken?: string) {
       .eq("id", courseId);
   } catch (error) {
     console.error("Error updating course timestamp:", error);
-    // Continue anyway, this is not critical
   }
 }
 
@@ -47,7 +70,6 @@ export async function POST(req: Request) {
       enableWebSearch = true,
     } = await req.json();
 
-    // Allow special messages: "__GREETING__" and "__CONTINUE__"
     if (
       !message ||
       (message !== "__GREETING__" &&
@@ -61,7 +83,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get access token from Authorization header
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
@@ -71,11 +92,8 @@ export async function POST(req: Request) {
     }
 
     const accessToken = authHeader.substring(7);
-
-    // Create server client with user context
     const supabase = await createServerClient(accessToken);
 
-    // Set the user session using the access token
     const {
       data: { user },
       error: authError,
@@ -88,19 +106,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify the user ID matches the token
     if (user.id !== userId) {
       return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
     }
 
     let validatedUserId = userId;
-
-    // Check if this is a special message
     const isGreeting = message === "__GREETING__";
     const isContinue = message === "__CONTINUE__";
     const isSpecialMessage = isGreeting || isContinue;
 
-    // Save the user's message to course_messages immediately (unless it's a special message)
     if (!isSpecialMessage) {
       try {
         await supabase.from("course_messages").insert({
@@ -111,53 +125,47 @@ export async function POST(req: Request) {
         });
       } catch (msgErr) {
         console.error("Error inserting user message:", msgErr);
-        // continue; not critical for generating response
       }
     }
 
     let courseInfo: any = null;
-    if (isSpecialMessage) {
-      try {
-        const { data: course, error: courseError } = await supabase
-          .from("courses")
-          .select(
-            "title, description, curriculum, learning_path_id, course_order, current_lesson_index, current_topic_index"
-          )
-          .eq("id", courseId)
-          .eq("user_id", validatedUserId)
-          .single();
+    try {
+      const { data: course, error: courseError } = await supabase
+        .from("courses")
+        .select(
+          "title, description, curriculum, learning_path_id, course_order, current_lesson_index, current_topic_index"
+        )
+        .eq("id", courseId)
+        .eq("user_id", validatedUserId)
+        .single();
 
-        if (!courseError && course) {
-          courseInfo = course;
+      if (!courseError && course) {
+        courseInfo = course;
 
-          if (course.learning_path_id) {
-            const { data: learningPath } = await supabase
-              .from("learning_paths")
-              .select("title, goal")
-              .eq("id", course.learning_path_id)
-              .single();
+        if (course.learning_path_id) {
+          const { data: learningPath } = await supabase
+            .from("learning_paths")
+            .select("title, goal")
+            .eq("id", course.learning_path_id)
+            .single();
 
-            if (learningPath) {
-              courseInfo.learning_path = learningPath;
-            }
+          if (learningPath) {
+            courseInfo.learning_path = learningPath;
           }
         }
-      } catch (error) {
-        console.error("Error fetching course info:", error);
       }
+    } catch (error) {
+      console.error("Error fetching course info:", error);
     }
 
-    // Retrieve relevant memories for this user and query
     let relevantMemories = "";
     try {
-      // Check if this is a personal information query
       const isPersonalInfoQuery =
         message.toLowerCase().includes("name") ||
         message.toLowerCase().includes("who am i") ||
         message.toLowerCase().includes("about me") ||
         message.toLowerCase().includes("remember me");
 
-      // Get course-based and long-term memories
       const memories = await recallMemory(
         courseId,
         message,
@@ -165,7 +173,6 @@ export async function POST(req: Request) {
         accessToken
       );
 
-      // For personal information queries, also directly check long-term memories
       let longTermMemories: any[] = [];
       if (isPersonalInfoQuery && validatedUserId) {
         try {
@@ -183,7 +190,6 @@ export async function POST(req: Request) {
         }
       }
 
-      // Combine all memories, removing duplicates
       const allMemories = [
         ...memories,
         ...longTermMemories.filter(
@@ -197,7 +203,6 @@ export async function POST(req: Request) {
       ];
 
       if (allMemories && allMemories.length > 0) {
-        // Check if there are memories with personal information
         const personalMemories = allMemories.filter(
           (mem) =>
             mem.pageContent.toLowerCase().includes("my name is") ||
@@ -211,7 +216,6 @@ export async function POST(req: Request) {
           `Retrieved ${allMemories.length} total memories (${memories.length} from course, ${longTermMemories.length} from long-term storage)`
         );
 
-        // Log if we found any long-term memories
         const longTermMemoriesCount = allMemories.filter(
           (mem) => mem.metadata.isLongterm === true
         ).length;
@@ -222,7 +226,6 @@ export async function POST(req: Request) {
           );
         }
 
-        // Format memories, putting personal information first
         const formattedMemories = [
           ...personalMemories.map((mem) => mem.pageContent),
           ...allMemories
@@ -235,7 +238,6 @@ export async function POST(req: Request) {
           formattedMemories.join("\n\n") +
           "\n\n";
 
-        // Log if personal info was found
         if (personalMemories.length > 0) {
           console.log(
             `Found ${personalMemories.length} memories with personal information`
@@ -249,20 +251,16 @@ export async function POST(req: Request) {
         "Error retrieving memories, continuing without them:",
         error
       );
-      // Continue without memories rather than failing the request
     }
 
-    // Check if the required API key is available and web search is enabled
     const hasSerperKey = process.env.SERPER_API_KEY;
     let searchResults = "";
 
     if (hasSerperKey && enableWebSearch) {
       try {
-        // Use the Serper tool to search for information
         const serperTool = webTools[0];
         const searchResponse = await serperTool.call(message);
 
-        // Process search results
         if (searchResponse) {
           try {
             const parsedResults = JSON.parse(searchResponse);
@@ -270,7 +268,6 @@ export async function POST(req: Request) {
               parsedResults
             )}\n\n`;
 
-            // Try to scrape the top result if it exists
             if (parsedResults.organic && parsedResults.organic.length > 0) {
               try {
                 const topResult = parsedResults.organic[0];
@@ -290,7 +287,6 @@ export async function POST(req: Request) {
               "Raw search response (first 100 chars):",
               searchResponse.substring(0, 100)
             );
-            // Still use the response, just as text instead of parsed JSON
             searchResults = `Web search results: ${searchResponse.substring(
               0,
               1000
@@ -313,15 +309,19 @@ export async function POST(req: Request) {
         : "Note: Web search is disabled by user preference.\n\n";
     }
 
+    const conversationHistory = await loadCourseHistoryFromDatabase(
+      courseId,
+      supabase,
+      20
+    );
+
     const chatSession = model.startChat({
       generationConfig: model.generationConfig,
-      history: getCourseHistory(courseId),
+      history: conversationHistory,
     });
 
-    // Create a stream
     const stream = new ReadableStream({
       async start(controller) {
-        // Handle special messages (greeting or continue)
         if (isSpecialMessage) {
           const courseTitle =
             courseInfo?.title?.replace(/^Course \d+:\s*/i, "") || "This Course";
@@ -364,7 +364,11 @@ ${
     : ""
 }
 
-Be concise (2-3 short paragraphs). Briefly explain what they'll learn and ask "Ready to begin?"`;
+Be concise (1-2 short paragraphs). Briefly explain what they'll learn and 
+then IMMEDIATELY begin teaching - don't wait for them to ask. 
+Take the lead by explaining the first lesson, presenting concepts, 
+and actively engaging them with questions or exercises. 
+Drive the conversation forward - you're the teacher, guide them proactively.`;
           } else if (isContinue) {
             const currentLesson = lessons[currentLessonIndex];
             const currentTopic = currentLesson?.topics?.[currentTopicIndex];
@@ -384,7 +388,10 @@ Current: Lesson ${currentLessonIndex + 1}${
 Recent context:
 ${relevantMemories || "No previous context."}
 
-Be concise (1-2 short paragraphs). Briefly summarize their progress and ask "Ready to continue?"`;
+Be concise (1-2 short sentences). Briefly summarize their progress 
+and then IMMEDIATELY continue teaching - don't wait for questions. 
+Proactively push forward with explanations, questions, exercises, tasks, or assessments based on the current lesson and topic. 
+Take charge of the learning - guide, challenge, and advance them through the material actively.`;
           }
 
           let fullResponse = "";
@@ -424,7 +431,6 @@ Be concise (1-2 short paragraphs). Briefly summarize their progress and ask "Rea
             }
           }
 
-          // Save as an AI message
           if (fullResponse) {
             try {
               await supabase.from("course_messages").insert({
@@ -442,10 +448,54 @@ Be concise (1-2 short paragraphs). Briefly summarize their progress and ask "Rea
           return;
         }
 
-        // Regular message handling
-        const systemContext = `You are an AI tutor. Be concise and direct. Answer questions clearly and briefly.`;
+        const lessons = courseInfo?.curriculum?.lessons || [];
+        const currentLessonIndex = courseInfo?.current_lesson_index ?? 0;
+        const currentTopicIndex = courseInfo?.current_topic_index ?? 0;
+        const currentLesson = lessons[currentLessonIndex];
+        const currentTopic = currentLesson?.topics?.[currentTopicIndex];
 
-        // Get course summary
+        let lessonContext = "";
+        if (currentLesson) {
+          lessonContext = `\n\nCURRENT LESSON CONTEXT (STAY FOCUSED ON THIS):
+Lesson ${currentLessonIndex + 1}: ${currentLesson.title}
+${currentLesson.description ? `Description: ${currentLesson.description}` : ""}
+${
+  currentTopic
+    ? `Current Topic ${currentTopicIndex + 1}: ${currentTopic}`
+    : `Topics: ${(currentLesson.topics || []).join(", ")}`
+}
+
+CRITICAL: You MUST stay on track with this lesson. Continue teaching, explaining, or practicing concepts from THIS lesson and topic. Do NOT jump to unrelated topics or general introductions. Progress through the lesson systematically.`;
+        }
+
+        const systemContext = `You are an active, proactive AI mentor who drives learning forward. 
+        DON'T wait passively for questions - take initiative and push the conversation forward. 
+
+CRITICAL TRACKING REQUIREMENT:
+- ALWAYS stay focused on the CURRENT LESSON and TOPIC provided below
+- Continue from where you left off in the lesson
+- Progress systematically through the lesson material
+- Do NOT jump to unrelated topics or general introductions
+- Keep advancing through the specific lesson content
+
+CONVERSATION MEMORY REQUIREMENT:
+- The conversation history below shows previous exchanges - USE IT to follow up on questions you asked
+- If you previously asked a question and the user answered, acknowledge their answer and build upon it
+- Reference previous explanations, examples, or concepts you introduced earlier in the conversation
+- Maintain continuity - your responses should connect to what was discussed before
+- Use the memories and history to personalize your teaching based on what the student has already learned
+
+When the user asks something: Answer clearly and briefly, 
+then IMMEDIATELY follow up with related questions, exercises, deeper explanations, 
+or next steps based on the CURRENT LESSON/TOPIC (not random topics).
+
+When the user doesn't ask: Proactively teach, explain concepts, generate exercises, 
+ask comprehension questions, assign tasks, or provide assessments - but ALWAYS related to the CURRENT LESSON/TOPIC.
+If you asked a question before, check if they answered it and build upon their response.
+
+Your role is to actively guide, challenge, and advance the student through the course material systematically. 
+Lead the learning - don't just respond, drive the progress - but STAY ON TRACK with the lesson and MAINTAIN CONVERSATION CONTINUITY.${lessonContext}`;
+
         let courseSummary = "";
         try {
           const vectorStore = await getVectorStore(accessToken);
@@ -476,10 +526,10 @@ ${
     ? `\nCourse Context for this conversation:\n${courseSummary}\n\n`
     : ""
 }
-        
+
 ${relevantMemories ? relevantMemories : ""}
 
-${message}
+Current message: ${message}
 
 ${
   searchResults
@@ -495,10 +545,9 @@ ${
             const text = chunk.text();
             fullResponse += text;
 
-            // Send each character individually
             for (const char of text) {
               controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
-              await new Promise((resolve) => setTimeout(resolve, 0.1)); // Optional delay
+              await new Promise((resolve) => setTimeout(resolve, 0.1));
             }
           }
         } catch (streamError: any) {
@@ -525,10 +574,6 @@ ${
           }
         }
 
-        if (fullResponse) {
-          updateCourseHistory(courseId, message, fullResponse);
-        }
-
         try {
           await supabase.from("course_messages").insert({
             course_id: courseId,
@@ -540,7 +585,6 @@ ${
           console.error("Error inserting assistant message:", assistErr);
         }
 
-        // Save memory: long-term only (short-term uses summaries)
         try {
           if (isLongTerm && validatedUserId) {
             const { saveMemory } = await import("@/utils/memory");
@@ -557,7 +601,6 @@ ${
             }
           }
 
-          // Update summary every 20 messages
           const { count } = await supabase
             .from("course_messages")
             .select("*", { count: "exact", head: true })

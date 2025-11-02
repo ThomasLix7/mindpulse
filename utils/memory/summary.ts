@@ -31,7 +31,7 @@ async function generateCourseSummary(
       .join("\n");
 
     const prompt = `You are analyzing a learning conversation between a student and AI tutor. 
-Create a concise learning path summary that captures:
+Create a concise course progress summary that captures:
 
 1. Topics/subjects covered
 2. Student's current skill level and progress
@@ -67,11 +67,7 @@ export async function saveCourseSummary(
   accessToken?: string
 ): Promise<boolean> {
   try {
-    const summary = await generateCourseSummary(
-      courseId,
-      userId,
-      accessToken
-    );
+    const summary = await generateCourseSummary(courseId, userId, accessToken);
 
     if (!summary) {
       return false;
@@ -118,10 +114,7 @@ export async function saveCourseSummary(
         console.error("Error updating course summary:", error);
         return false;
       }
-      console.log(
-        "Updated course summary for course:",
-        courseId
-      );
+      console.log("Updated course summary for course:", courseId);
     } else {
       const { error } = await vectorStore
         .from("ai_memories")
@@ -131,10 +124,7 @@ export async function saveCourseSummary(
         console.error("Error saving course summary:", error);
         return false;
       }
-      console.log(
-        "Saved course summary for course:",
-        courseId
-      );
+      console.log("Saved course summary for course:", courseId);
     }
 
     return true;
@@ -143,4 +133,3 @@ export async function saveCourseSummary(
     return false;
   }
 }
-
