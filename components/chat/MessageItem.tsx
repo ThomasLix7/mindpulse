@@ -1,4 +1,4 @@
-import { Box, Text } from "@chakra-ui/react";
+import { Box, Text, Flex } from "@chakra-ui/react";
 import { useColorMode } from "@/components/ui/color-mode";
 import { Message } from "@/types/chat";
 
@@ -36,65 +36,40 @@ export function MessageItem({
     message.ai || (hasAiResponse ? (message as any).aiResponse : "");
 
   return (
-    <Box
-      mb={0}
-      p={3}
-      borderRadius="md"
-      backgroundColor={
-        userText
-          ? colorMode === "dark"
-            ? "black"
-            : "gray.100"
-          : colorMode === "dark"
-          ? "gray.900"
-          : "gray.50"
-      }
-    >
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="flex-start"
-      >
-        <Box flex="1">
-          {userText && (
-            <Text
-              fontWeight="bold"
-              color={colorMode === "dark" ? "blue.300" : "blue.600"}
-              mb={1}
-            >
-              You:
-            </Text>
-          )}
-          {userText && <Text>{userText}</Text>}
+    <>
+      {userText && (
+        <Flex justifyContent="flex-end" mb={3}>
+          <Box
+            maxW="70%"
+            p={3}
+            borderRadius="xl"
+            background="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+            color="white"
+            boxShadow="0 2px 8px rgba(102, 126, 234, 0.3)"
+          >
+            <Text whiteSpace="pre-wrap">{userText}</Text>
+          </Box>
+        </Flex>
+      )}
 
-          {aiText && (
-            <Text
-              fontWeight="bold"
-              color={colorMode === "dark" ? "green.300" : "green.600"}
-              mt={userText ? 3 : 0}
-              mb={1}
-            >
-              Lex:
+      {aiText && (
+        <Flex justifyContent="flex-start" mb={3}>
+          <Box maxW="70%" p={3}>
+            <Text whiteSpace="pre-wrap">
+              {aiText.split(/(\*\*.*?\*\*)/g).map((part, i) => {
+                if (part.startsWith("**") && part.endsWith("**")) {
+                  return (
+                    <Text as="span" key={i} fontWeight="bold">
+                      {part.slice(2, -2)}
+                    </Text>
+                  );
+                }
+                return part;
+              })}
             </Text>
-          )}
-          {aiText && (
-            <Box mt={2}>
-              <Text whiteSpace="pre-wrap">
-                {aiText.split(/(\*\*.*?\*\*)/g).map((part, i) => {
-                  if (part.startsWith("**") && part.endsWith("**")) {
-                    return (
-                      <Text as="span" key={i} fontWeight="bold">
-                        {part.slice(2, -2)}
-                      </Text>
-                    );
-                  }
-                  return part;
-                })}
-              </Text>
-            </Box>
-          )}
-        </Box>
-      </Box>
-    </Box>
+          </Box>
+        </Flex>
+      )}
+    </>
   );
 }
