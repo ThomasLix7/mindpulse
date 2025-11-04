@@ -30,6 +30,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 interface CourseSidebarProps {
   learningPaths: any[];
+  courses?: any[];
   isLoading: boolean;
   userId?: string;
   onDeleteLearningPath?: (id: string) => Promise<void>;
@@ -53,6 +54,7 @@ interface Course {
 
 export default function CourseSidebar({
   learningPaths,
+  courses: coursesFromProps,
   isLoading,
   userId,
   onDeleteLearningPath,
@@ -95,16 +97,31 @@ export default function CourseSidebar({
     });
   };
 
-  const loadCoursesForPath = async (pathId: string) => {
+  const loadCoursesForPath = (pathId: string) => {
+    if (coursesFromProps && coursesFromProps.length > 0) {
+      const pathCourses = coursesFromProps
+        .filter((c: Course) => c.learning_path_id === pathId)
+        .sort((a: Course, b: Course) => a.course_order - b.course_order);
+      setCoursesByPath((prev) => ({
+        ...prev,
+        [pathId]: pathCourses,
+      }));
+      return;
+    }
+
     if (!userId || loadingCourses.has(pathId)) return;
 
     setLoadingCourses((prev) => new Set(prev).add(pathId));
 
-    try {
-      const response = await apiFetch(`/api/courses?userId=${userId}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.courses) {
+    apiFetch(`/api/courses?userId=${userId}`)
+      .then((response) => {
+        if (response.ok) {
+          return response.json();
+        }
+        return null;
+      })
+      .then((data) => {
+        if (data?.success && data.courses) {
           const pathCourses = data.courses
             .filter((c: Course) => c.learning_path_id === pathId)
             .sort((a: Course, b: Course) => a.course_order - b.course_order);
@@ -113,16 +130,17 @@ export default function CourseSidebar({
             [pathId]: pathCourses,
           }));
         }
-      }
-    } catch (error) {
-      console.error("Error loading courses:", error);
-    } finally {
-      setLoadingCourses((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(pathId);
-        return newSet;
+      })
+      .catch((error) => {
+        console.error("Error loading courses:", error);
+      })
+      .finally(() => {
+        setLoadingCourses((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(pathId);
+          return newSet;
+        });
       });
-    }
   };
 
   useEffect(() => {
@@ -142,46 +160,13 @@ export default function CourseSidebar({
     router.push(`/mentor/${id}`);
   };
 
-  const handleCourseClick = async (course: Course, e: React.MouseEvent) => {
+  const handleCourseClick = (course: Course, e: React.MouseEvent) => {
     e.stopPropagation();
 
     if (!userId) return;
 
-    // Check if course has messages (conversation started) or is already in progress
-    const isInProgress =
-      course.current_lesson_index !== undefined &&
-      course.current_lesson_index >= 0;
-
-    if (isInProgress) {
-      // Course is already in progress, navigate directly
-      router.push(`/mentor/${course.id}`);
-      return;
-    }
-
-    try {
-      const response = await apiFetch(
-        `/api/courses?userId=${userId}&courseId=${course.id}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const hasMessages =
-          data.course?.history && data.course.history.length > 0;
-
-        if (hasMessages) {
-          // Course has conversation, navigate directly
-          router.push(`/mentor/${course.id}`);
-        } else {
-          // Course exists but no messages yet - show confirmation before starting
-          setConfirmCourse(course);
-        }
-      } else {
-        // Fallback: show confirmation
-        setConfirmCourse(course);
-      }
-    } catch (error) {
-      console.error("Error checking course:", error);
-      setConfirmCourse(course);
-    }
+    // Navigate directly - history will be loaded when needed
+    router.push(`/mentor/${course.id}`);
   };
 
   const confirmStartCourse = () => {

@@ -51,7 +51,7 @@ function invalidateMemoriesCache(courseId: string, userId: string): void {
 async function loadCourseHistoryFromDatabase(
   courseId: string,
   supabase: any,
-  limit: number = 20
+  limit: number = 50
 ): Promise<any[]> {
   try {
     const { data: messages, error } = await supabase
@@ -110,22 +110,28 @@ async function updateCourseTimestamp(courseId: string, accessToken?: string) {
 
 export async function POST(req: Request) {
   try {
-    const {
-      message,
-      courseId,
-      userId,
-      enableWebSearch = true,
-    } = await req.json();
+    const body = await req.json();
+    const { message, courseId, userId, enableWebSearch = true } = body;
 
     if (
       !message ||
       (message !== "__GREETING__" &&
         message !== "__CONTINUE__" &&
         !message.trim()) ||
-      !courseId?.trim()
+      !courseId?.trim() ||
+      !userId
     ) {
+      console.error("[Chat API] Validation failed:", {
+        hasMessage: !!message,
+        messageLength: message?.length,
+        messageValue: message,
+        hasCourseId: !!courseId,
+        courseIdValue: courseId,
+        hasUserId: !!userId,
+        userIdValue: userId,
+      });
       return NextResponse.json(
-        { error: "Message and course ID are required" },
+        { error: "Message, course ID, and user ID are required" },
         { status: 400 }
       );
     }
@@ -303,7 +309,7 @@ export async function POST(req: Request) {
     const conversationHistory = await loadCourseHistoryFromDatabase(
       courseId,
       supabase,
-      20
+      50
     );
 
     const chatSession = model.startChat({
@@ -393,11 +399,9 @@ Take charge of the learning - guide, challenge, and advance them through the mat
               const text = chunk.text();
               fullResponse += text;
 
-              for (const char of text) {
-                controller.enqueue(
-                  `data: ${JSON.stringify({ text: char })}\n\n`
-                );
-                await new Promise((resolve) => setTimeout(resolve, 0.1));
+              // Send chunks directly instead of character-by-character for smoother streaming
+              if (text) {
+                controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
               }
             }
           } catch (streamError: any) {
@@ -493,9 +497,9 @@ ${
             const text = chunk.text();
             fullResponse += text;
 
-            for (const char of text) {
-              controller.enqueue(`data: ${JSON.stringify({ text: char })}\n\n`);
-              await new Promise((resolve) => setTimeout(resolve, 0.1));
+            // Send chunks directly instead of character-by-character for smoother streaming
+            if (text) {
+              controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
             }
           }
         } catch (streamError: any) {

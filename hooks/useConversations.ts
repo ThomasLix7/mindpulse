@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
 import { Course } from "@/types/chat";
+import { useLearningData } from "@/app/mentor/LearningDataContext";
 
 function generateCourseId(): string {
   return `course-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
@@ -17,6 +18,7 @@ function isLongtermMemory(item: any): boolean {
 }
 
 export function useCourses(courseId?: string, isHomePage?: boolean) {
+  const { courses: contextCourses } = useLearningData();
   const [courses, setCourses] = useState<Course[]>([]);
   const [activeCourseId, setActiveCourseId] = useState<string>(courseId || "");
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -27,6 +29,8 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
   );
   const router = useRouter();
   const processedCoursesRef = useRef<Set<string>>(new Set());
+  const loadingCoursesRef = useRef<Set<string>>(new Set());
+  const loadingHistoryRef = useRef<Set<string>>(new Set());
 
   const getActiveCourse = () => {
     return (
@@ -37,6 +41,28 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       }
     );
   };
+
+  useEffect(() => {
+    if (contextCourses && contextCourses.length > 0) {
+      const clientCourses = contextCourses.map((course: any) => ({
+        id: course.id,
+        title: course.title,
+        curriculum: course.curriculum,
+        learning_path_id: course.learning_path_id,
+        course_order: course.course_order,
+        current_lesson_index: course.current_lesson_index,
+        current_topic_index: course.current_topic_index,
+        history: [],
+      }));
+      setCourses(clientCourses);
+
+      if (courseId && clientCourses.some((c: Course) => c.id === courseId)) {
+        // courseId is valid
+      } else if (clientCourses.length > 0 && !activeCourseId) {
+        setActiveCourseId(clientCourses[0].id);
+      }
+    }
+  }, [contextCourses, courseId, activeCourseId]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -54,24 +80,33 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
   }, []);
 
   useEffect(() => {
-    if (!user?.id || !authChecked) return;
+    if (!user?.id || !authChecked) {
+      return;
+    }
 
     if (!courseId || courseId === "new") {
       setHistoryLoading(false);
       return;
     }
 
+    // Early return if already processed and loaded
     if (
       processedCoursesRef.current.has(courseId) &&
-      activeCourseId === courseId
+      activeCourseId === courseId &&
+      loadedCourseIds.has(courseId)
     ) {
       return;
     }
 
     const existingCourse = courses.find((c) => c.id === courseId);
 
+    // If course already loaded with history, just activate it
     if (loadedCourseIds.has(courseId)) {
-      if (existingCourse) {
+      if (
+        existingCourse &&
+        existingCourse.history &&
+        existingCourse.history.length > 0
+      ) {
         if (activeCourseId !== courseId) {
           setActiveCourseId(courseId);
         }
@@ -83,7 +118,13 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       }
     }
 
-    if (existingCourse && existingCourse.history !== undefined) {
+    // If course exists but history is empty or undefined, we need to fetch it
+    if (
+      existingCourse &&
+      existingCourse.history &&
+      existingCourse.history.length > 0
+    ) {
+      // Course already has history loaded
       if (activeCourseId !== courseId) {
         setActiveCourseId(courseId);
       }
@@ -97,28 +138,34 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       return;
     }
 
-    if (!loadedCourseIds.has(courseId)) {
-      if (!historyLoading) {
-        setHistoryLoading(true);
-      }
-      if (activeCourseId !== courseId) {
-        setActiveCourseId(courseId);
-      }
+    // Course exists but no history yet, or doesn't exist - fetch it
+    if (
+      !loadingCoursesRef.current.has(courseId) &&
+      !loadingHistoryRef.current.has(courseId)
+    ) {
+      loadingHistoryRef.current.add(courseId);
+      loadingCoursesRef.current.add(courseId);
+      setHistoryLoading(true);
+      setActiveCourseId(courseId);
       sessionStorage.removeItem(`checked-empty-${courseId}`);
-      setLoadedCourseIds((prev) => new Set(prev).add(courseId));
 
       loadSpecificCourse(courseId, user?.id)
-        .then(() => setHistoryLoading(false))
-        .catch(() => setHistoryLoading(false));
+        .then((result) => {
+          setHistoryLoading(false);
+          loadingCoursesRef.current.delete(courseId);
+          loadingHistoryRef.current.delete(courseId);
+          setLoadedCourseIds((prev) => new Set(prev).add(courseId));
+          processedCoursesRef.current.add(courseId);
+        })
+        .catch((error) => {
+          console.error(`[useCourses] loadSpecificCourse failed:`, error);
+          setHistoryLoading(false);
+          loadingCoursesRef.current.delete(courseId);
+          loadingHistoryRef.current.delete(courseId);
+        });
     }
-  }, [
-    courseId,
-    user?.id,
-    authChecked,
-    loadedCourseIds,
-    activeCourseId,
-    historyLoading,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, user?.id, authChecked]);
 
   const loadCourses = async (userId?: string) => {
     setHistoryLoading(true);
@@ -135,44 +182,8 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
   };
 
   const fetchCoursesFromServer = async (userId: string) => {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
-
-      if (!accessToken) {
-        throw new Error("No access token available");
-      }
-
-      const response = await apiFetch(`/api/courses?userId=${userId}`, {
-        method: "GET",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-
-        if (data.success && data.courses && Array.isArray(data.courses)) {
-          const clientCourses = data.courses.map((course: any) => ({
-            id: course.id,
-            title: course.title,
-            history: [],
-          }));
-
-          setCourses(clientCourses);
-
-          if (
-            courseId &&
-            clientCourses.some((c: Course) => c.id === courseId)
-          ) {
-          } else if (clientCourses.length > 0) {
-            setActiveCourseId(clientCourses[0].id);
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching courses:", error);
-    }
+    // This function is now a no-op as data comes from context
+    // Keeping it for backward compatibility
   };
 
   const createNewCourse = async () => {
@@ -320,25 +331,32 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
         return;
       }
 
+      if (
+        loadedCourseIds.has(activeCourseId) ||
+        loadingCoursesRef.current.has(activeCourseId) ||
+        loadingHistoryRef.current.has(activeCourseId)
+      ) {
+        return;
+      }
+
       const exists = checkCourseExists(activeCourseId);
       const existingCourse = courses.find((c) => c.id === activeCourseId);
 
-      if (
-        (!exists || (existingCourse && existingCourse.history === undefined)) &&
-        !loadedCourseIds.has(activeCourseId)
-      ) {
-        loadSpecificCourse(activeCourseId, user?.id);
-        return;
+      if (!exists || (existingCourse && existingCourse.history === undefined)) {
+        loadingHistoryRef.current.add(activeCourseId);
+        loadingCoursesRef.current.add(activeCourseId);
+        loadSpecificCourse(activeCourseId, user?.id)
+          .then(() => {
+            loadingCoursesRef.current.delete(activeCourseId);
+            loadingHistoryRef.current.delete(activeCourseId);
+          })
+          .catch(() => {
+            loadingCoursesRef.current.delete(activeCourseId);
+            loadingHistoryRef.current.delete(activeCourseId);
+          });
       }
     }
-  }, [
-    historyLoading,
-    authChecked,
-    activeCourseId,
-    user?.id,
-    courses,
-    loadedCourseIds,
-  ]);
+  }, [historyLoading, authChecked, activeCourseId, user?.id]);
 
   useEffect(() => {
     if (!historyLoading && authChecked && courses.length === 0 && !courseId) {
@@ -355,22 +373,27 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
 
   // Load specific course by ID
   const loadSpecificCourse = async (courseId: string, userId?: string) => {
-    // Don't load if we already checked this course was empty (prevents infinite loops)
     const checkedEmpty = sessionStorage.getItem(`checked-empty-${courseId}`);
     if (checkedEmpty) {
       setHistoryLoading(false);
       return null;
     }
 
-    // Set loading state
+    const existingCourse = courses.find((c) => c.id === courseId);
+    if (
+      existingCourse &&
+      existingCourse.history &&
+      existingCourse.history.length > 0
+    ) {
+      return existingCourse;
+    }
+
     setHistoryLoading(true);
 
     try {
-      // First check if we already have this course in memory
       const existingCourse = courses.find((c) => c.id === courseId);
 
       if (existingCourse) {
-        // If course exists but has no history, check if we need to load from server
         if (
           (!existingCourse.history || existingCourse.history.length === 0) &&
           user?.id
@@ -378,6 +401,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
           // Check server for history
         } else {
           // We have a valid memory course with history, use it
+          console.log(`[loadSpecificCourse] Course has history, returning`);
           setHistoryLoading(false);
           return existingCourse;
         }
@@ -386,6 +410,10 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       // For authenticated users, fetch from server
       if (user?.id) {
         try {
+          console.log(
+            `[loadSpecificCourse] Fetching from API: /api/courses?userId=${user.id}&courseId=${courseId}`
+          );
+
           // Get user's access token
           const {
             data: { session },
@@ -416,9 +444,10 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
               const itemIsLongterm = isLongtermMemory(item);
 
               return {
-                user: item.userMessage,
-                ai: item.aiResponse,
+                user: item.userMessage || item.user || "",
+                ai: item.aiResponse || item.ai || "",
                 isLongterm: itemIsLongterm,
+                timestamp: item.timestamp || Date.now(),
               };
             });
 
@@ -427,8 +456,8 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
               title: data.course.title || "New Course",
               created_at: data.course.created_at,
               updated_at: data.course.updated_at,
-              history: formattedHistory, // Use the converted history format
-            };
+              history: formattedHistory,
+            } as any;
 
             // Update courses in memory
             setCourses((prevCourses) => {
@@ -449,17 +478,21 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
 
             return formattedCourse;
           } else {
+            loadingCoursesRef.current.delete(courseId);
             sessionStorage.setItem(`checked-empty-${courseId}`, "true");
           }
         } catch (error) {
           console.error("Error fetching course from server:", error);
+          loadingCoursesRef.current.delete(courseId);
         }
       }
 
+      loadingCoursesRef.current.delete(courseId);
       setHistoryLoading(false);
       sessionStorage.setItem(`checked-empty-${courseId}`, "true");
       return null;
     } catch (error) {
+      loadingCoursesRef.current.delete(courseId);
       setHistoryLoading(false);
       return null;
     }

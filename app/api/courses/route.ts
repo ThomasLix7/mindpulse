@@ -226,49 +226,60 @@ async function getCourseHistory(
     if (vectorStore instanceof SupabaseVectorStore) {
       const supabaseClient = (vectorStore as any).client;
 
-      // First, load messages from course_messages table
-      const { data: courseMessages, error: messagesError } =
-        await supabaseClient
-          .from("course_messages")
-          .select("role, content, created_at")
-          .eq("course_id", courseId)
-          .order("created_at", { ascending: true });
+      const limit = 50;
 
-      if (!messagesError && courseMessages && courseMessages.length > 0) {
-        // Convert course_messages to history format
-        // Messages are already in chronological order
+      const query = supabaseClient
+        .from("course_messages")
+        .select("role, content, created_at")
+        .eq("course_id", courseId)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      const { data: courseMessages, error: messagesError } = await query;
+
+      if (messagesError) {
+        console.error("Error fetching course_messages:", messagesError);
+      }
+
+      let sortedMessages: any[] = [];
+
+      if (!messagesError && courseMessages?.length) {
+        sortedMessages = [...courseMessages].reverse();
+
         let currentUserMessage = "";
+        let lastUserTimestamp: number | null = null;
 
-        for (const msg of courseMessages) {
+        for (const msg of sortedMessages) {
+          const msgTimestamp = new Date(msg.created_at).getTime();
+
           if (msg.role === "user") {
-            // Save previous pair if exists
-            if (currentUserMessage) {
+            if (currentUserMessage && lastUserTimestamp) {
               history.push({
                 userMessage: currentUserMessage,
                 aiResponse: "",
-                timestamp: Date.now(),
+                timestamp: lastUserTimestamp,
                 is_longterm: false,
               });
             }
             currentUserMessage = msg.content;
-          } else if (msg.role === "assistant") {
-            // Pair with previous user message, or standalone if no user message (greeting)
+            lastUserTimestamp = msgTimestamp;
+          } else if (msg.role === "assistant" || msg.role === "model") {
             history.push({
               userMessage: currentUserMessage || "",
               aiResponse: msg.content,
-              timestamp: new Date(msg.created_at).getTime(),
+              timestamp: msgTimestamp,
               is_longterm: false,
             });
             currentUserMessage = "";
+            lastUserTimestamp = null;
           }
         }
 
-        // Save any remaining user message without response
-        if (currentUserMessage) {
+        if (currentUserMessage && lastUserTimestamp) {
           history.push({
             userMessage: currentUserMessage,
             aiResponse: "",
-            timestamp: Date.now(),
+            timestamp: lastUserTimestamp,
             is_longterm: false,
           });
         }
@@ -282,17 +293,9 @@ async function getCourseHistory(
           .eq("course_id", courseId)
           .order("created_at", { ascending: true });
 
-      if (columnQueryError) {
-        console.error(
-          "Database query error using course_id column:",
-          columnQueryError
-        );
-      } else if (columnResultRows && columnResultRows.length > 0) {
+      if (!columnQueryError && columnResultRows?.length) {
         resultRows = columnResultRows;
       } else {
-        console.log("No records found using course_id column, trying metadata");
-
-        // Method 2: Try the legacy metadata approach as fallback
         const { data: metadataResultRows, error: metadataQueryError } =
           await supabaseClient
             .from("ai_memories")
@@ -306,19 +309,11 @@ async function getCourseHistory(
             )
             .order("metadata->>'timestamp'", { ascending: true });
 
-        if (metadataQueryError) {
-          console.error(
-            "Database query error using metadata.courseId:",
-            metadataQueryError
-          );
-        } else if (metadataResultRows && metadataResultRows.length > 0) {
+        if (!metadataQueryError && metadataResultRows?.length) {
           resultRows = metadataResultRows;
-        } else {
-          console.log("No records found with either method");
         }
       }
 
-      // If we got messages from course_messages, return them
       if (history.length > 0) {
         return NextResponse.json({
           history,
@@ -327,7 +322,6 @@ async function getCourseHistory(
         });
       }
 
-      // Otherwise, return empty if no memories found
       return NextResponse.json({
         history: [],
         success: true,

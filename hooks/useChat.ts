@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
@@ -34,16 +34,18 @@ export function useChat({
   const [loading, setLoading] = useState(false);
   const [enableWebSearch, setEnableWebSearch] = useState<boolean>(false);
   const router = useRouter();
-  const streamingTextRef = useRef<Map<string, string>>(new Map());
-  const updateTimeoutRef = useRef<number | null>(null);
 
-  // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, message?: string) => {
     e.preventDefault();
-    const userMessage = input;
+    const userMessage = message || input.trim();
+
+    if (!userMessage) {
+      setLoading(false);
+      return;
+    }
+
     setInput("");
 
-    // Check if we have an active course, or create a new one
     let courseId = activeCourseId;
     if (!courseId) {
       courseId = (await createNewCourse()) as string;
@@ -53,17 +55,20 @@ export function useChat({
       }
     }
 
-    // Add user message to course immediately
+    if (!user?.id) {
+      console.error("User ID is missing");
+      return;
+    }
+
     setCourses((prev) =>
-      prev.map((course) => {
-        if (course.id === courseId) {
-          return {
-            ...course,
-            history: [...course.history, { user: userMessage, ai: "" }],
-          };
-        }
-        return course;
-      })
+      prev.map((course) =>
+        course.id === courseId
+          ? {
+              ...course,
+              history: [...course.history, { user: userMessage, ai: "" }],
+            }
+          : course
+      )
     );
 
     setLoading(true);
@@ -73,10 +78,9 @@ export function useChat({
         method: "POST",
         body: JSON.stringify({
           message: userMessage,
-          courseId: courseId,
-          userId: user?.id,
-          isLongTerm: false,
-          enableWebSearch: enableWebSearch,
+          courseId,
+          userId: user.id,
+          enableWebSearch,
         }),
       });
 
@@ -92,96 +96,83 @@ export function useChat({
       const decoder = new TextDecoder();
       let aiResponse = "";
       let buffer = "";
+      let pendingChars = "";
+      let updateTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const flushPending = () => {
+        if (pendingChars) {
+          aiResponse += pendingChars;
+          updateStreamingResponse(courseId, aiResponse);
+          pendingChars = "";
+        }
+        if (updateTimer) {
+          clearTimeout(updateTimer);
+          updateTimer = null;
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          flushPending();
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
 
-        // Process character by character
-        while (buffer.length > 0) {
-          const char = buffer[0];
-          buffer = buffer.slice(1);
+        // Process SSE format: look for "data: " lines
+        let dataIndex = buffer.indexOf("data: ");
+        while (dataIndex !== -1) {
+          // Extract everything after "data: "
+          const afterData = buffer.slice(dataIndex + 6);
+          const endIndex = afterData.indexOf("\n\n");
 
-          // Check if we're at the start of a new SSE event
-          if (char === "d" && buffer.startsWith("ata: ")) {
-            // Skip past "data: " (5 characters)
-            buffer = buffer.slice(5);
-            const endIndex = buffer.indexOf("\n\n");
-            if (endIndex === -1) continue;
-
-            const jsonStr = buffer.slice(0, endIndex);
-            buffer = buffer.slice(endIndex + 2);
-
-            try {
-              const data = JSON.parse(jsonStr);
-              if (data.text) {
-                aiResponse += data.text;
-                streamingTextRef.current.set(courseId, aiResponse);
-                if (updateTimeoutRef.current) {
-                  cancelAnimationFrame(updateTimeoutRef.current);
-                }
-                updateTimeoutRef.current = requestAnimationFrame(() => {
-                  const currentText =
-                    streamingTextRef.current.get(courseId) || "";
-                  updateStreamingResponse(courseId, currentText);
-                });
-              }
-            } catch (e) {
-              console.error("JSON parse error:", e);
-            }
+          if (endIndex === -1) {
+            // Need more data, keep the buffer from "data: " onwards
+            buffer = buffer.slice(dataIndex);
+            break;
           }
-        }
-      }
 
-      // Ensure the final response is properly stored in the course history
-      if (aiResponse) {
-        // Final update to make sure the complete response is saved
-        setCourses((prev) =>
-          prev.map((course) => {
-            if (course.id === courseId && course.history.length > 0) {
-              const updatedHistory = [...course.history];
-              const lastIndex = updatedHistory.length - 1;
+          const jsonStr = afterData.slice(0, endIndex).trim();
+          buffer = buffer.slice(dataIndex + 6 + endIndex + 2);
 
-              updatedHistory[lastIndex] = {
-                user: updatedHistory[lastIndex].user,
-                ai: aiResponse,
-              };
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.text) {
+              pendingChars += data.text;
 
-              return { ...course, history: updatedHistory };
+              // Batch updates: flush every 15 characters or after 100ms for smoother streaming
+              if (pendingChars.length >= 15) {
+                flushPending();
+              } else if (!updateTimer) {
+                updateTimer = setTimeout(flushPending, 100);
+              }
             }
-            return course;
-          })
-        );
+          } catch (e) {
+            console.error("JSON parse error:", e);
+          }
+
+          dataIndex = buffer.indexOf("data: ");
+        }
       }
     } catch (e) {
       console.error("Chat API or stream error:", e);
-      if (updateTimeoutRef.current) {
-        cancelAnimationFrame(updateTimeoutRef.current);
-      }
 
       // Show an error message in the UI by updating the current course
       setCourses((prev) =>
         prev.map((course) => {
           if (course.id === courseId && course.history.length > 0) {
             const updatedHistory = [...course.history];
-            const lastIndex = updatedHistory.length - 1;
-
-            updatedHistory[lastIndex] = {
-              user: updatedHistory[lastIndex].user,
+            updatedHistory[updatedHistory.length - 1] = {
+              ...updatedHistory[updatedHistory.length - 1],
               ai: "Sorry, there was an error processing your request. Please try again.",
             };
-
             return { ...course, history: updatedHistory };
           }
           return course;
         })
       );
     } finally {
-      if (updateTimeoutRef.current) {
-        cancelAnimationFrame(updateTimeoutRef.current);
-      }
       setLoading(false);
     }
   };

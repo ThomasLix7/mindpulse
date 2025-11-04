@@ -342,22 +342,39 @@ export async function GET(request: Request) {
       });
     }
 
-    const { data: learningPaths, error } = await supabase
+    const { data: learningPaths, error: pathsError } = await supabase
       .from("learning_paths")
       .select("*")
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching learning paths:", error);
+    if (pathsError) {
+      console.error("Error fetching learning paths:", pathsError);
       return NextResponse.json(
         { error: "Failed to fetch learning paths" },
         { status: 500 }
       );
     }
 
+    const { data: courses, error: coursesError } = await supabase
+      .from("courses")
+      .select(
+        "id, title, learning_path_id, course_order, curriculum, current_lesson_index, current_topic_index, current_topic_id, completed_topic_ids, created_at, updated_at"
+      )
+      .eq("user_id", userId)
+      .order("learning_path_id, course_order", { ascending: true });
+
+    if (coursesError) {
+      console.error("Error fetching courses:", coursesError);
+      return NextResponse.json(
+        { error: "Failed to fetch courses" },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
-      learningPaths,
+      learningPaths: learningPaths || [],
+      courses: courses || [],
       success: true,
     });
   } catch (error) {

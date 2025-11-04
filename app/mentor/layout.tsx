@@ -1,12 +1,13 @@
 "use client";
 
-import { Box, Flex, Heading, Text } from "@chakra-ui/react";
+import { Box, Flex } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
-import { getCurrentUser, supabase } from "@/utils/supabase-client";
+import { getCurrentUser } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
 import CourseSidebar from "@/components/ConversationSidebar";
 import { useRouter, usePathname } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
+import { LearningDataProvider, useLearningData } from "./LearningDataContext";
 
 interface LearningPath {
   id: string;
@@ -16,90 +17,36 @@ interface LearningPath {
   updated_at?: string;
 }
 
-export default function ChatLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function ChatLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { colorMode } = useColorMode();
   const [user, setUser] = useState<any>(null);
-  const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { learningPaths, courses, isLoading, refreshData } = useLearningData();
 
-  // Load user and learning paths
   useEffect(() => {
-    async function loadUserAndLearningPaths() {
+    async function loadUser() {
       const { user } = await getCurrentUser();
       setUser(user);
-
-      if (user?.id) {
-        try {
-          const response = await apiFetch(
-            `/api/learning-paths?userId=${user.id}`,
-            {
-              method: "GET",
-            }
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.learningPaths) {
-              setLearningPaths(data.learningPaths);
-            }
-          }
-        } catch (error) {
-          console.error("Error loading learning paths:", error);
-        }
-      }
-
-      setIsLoading(false);
     }
-
-    loadUserAndLearningPaths();
-
-    // Listen for learning path creation events
-    const handleNewLearningPath = (event: any) => {
-      setLearningPaths((prev) => {
-        if (prev.some((path: any) => path.id === event.detail.id)) {
-          return prev;
-        }
-        return [event.detail, ...prev];
-      });
-    };
-
-    window.addEventListener("learning-path-created", handleNewLearningPath);
-
-    return () => {
-      window.removeEventListener("learning-path-created", handleNewLearningPath);
-    };
+    loadUser();
   }, []);
 
   // Handle learning path deletion
   const deleteLearningPath = async (id: string) => {
     const currentPathId = pathname.split("/").pop();
     const isOnPathRoute = id === currentPathId;
-    
+
     // Check if user is on a course route that belongs to this learning path
     let isOnCourseRoute = false;
-    if (user?.id && currentPathId && !isOnPathRoute) {
-      try {
-        // Check if current ID is a course that belongs to this learning path
-        const coursesResponse = await apiFetch(`/api/courses?userId=${user.id}&courseId=${currentPathId}`);
-        if (coursesResponse.ok) {
-          const coursesData = await coursesResponse.json();
-          if (coursesData.success && coursesData.course?.learning_path_id === id) {
-            isOnCourseRoute = true;
-          }
-        }
-      } catch (error) {
-        console.error("Error checking course:", error);
+    if (currentPathId && !isOnPathRoute && courses.length > 0) {
+      const currentCourse = courses.find((c: any) => c.id === currentPathId);
+      if (currentCourse && (currentCourse as any).learning_path_id === id) {
+        isOnCourseRoute = true;
       }
     }
 
     const currentPaths = [...learningPaths];
-    setLearningPaths((prev) => prev.filter((path) => path.id !== id));
 
     if (user?.id) {
       try {
@@ -109,6 +56,7 @@ export default function ChatLayout({
             method: "DELETE",
           }
         );
+        await refreshData();
       } catch (error) {
         console.error("Error deleting learning path on server:", error);
       }
@@ -140,6 +88,7 @@ export default function ChatLayout({
       {/* Persistent Sidebar */}
       <CourseSidebar
         learningPaths={learningPaths}
+        courses={courses}
         isLoading={isLoading}
         userId={user?.id}
         onDeleteLearningPath={deleteLearningPath}
@@ -152,5 +101,17 @@ export default function ChatLayout({
         </Box>
       </Box>
     </Flex>
+  );
+}
+
+export default function ChatLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <LearningDataProvider>
+      <ChatLayoutInner>{children}</ChatLayoutInner>
+    </LearningDataProvider>
   );
 }

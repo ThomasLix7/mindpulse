@@ -1,39 +1,180 @@
-import { Box, Text, Flex } from "@chakra-ui/react";
+import { Box, Text, Flex, Link } from "@chakra-ui/react";
 import { useColorMode } from "@/components/ui/color-mode";
 import { Message } from "@/types/chat";
-
-function isLongtermMemory(item: any): boolean {
-  return Boolean(
-    item.is_longterm === true ||
-      item.metadata?.isLongterm === true ||
-      item.isLongterm === true
-  );
-}
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import {
+  vscDarkPlus,
+  okaidia,
+} from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { useMemo } from "react";
 
 interface MessageItemProps {
   message: Message;
-  index: number;
-  courseId: string;
-  user: any;
 }
 
-export function MessageItem({
-  message,
-  index,
-  courseId,
-  user,
-}: MessageItemProps) {
+export function MessageItem({ message }: MessageItemProps) {
   const { colorMode } = useColorMode();
 
-  // Check for alternative property names that might exist
-  const hasUserMessage = "userMessage" in message;
-  const hasAiResponse = "aiResponse" in message;
+  const userText = message.user || (message as any).userMessage || "";
+  const aiText = message.ai || (message as any).aiResponse || "";
 
-  // Use either the expected property names or alternatives
-  const userText: string =
-    message.user || (hasUserMessage ? (message as any).userMessage : "");
-  const aiText: string =
-    message.ai || (hasAiResponse ? (message as any).aiResponse : "");
+  const userMarkdownComponents = useMemo(
+    () => ({
+      p: ({ children }: any) => (
+        <Text mb={0} lineHeight="1.6" fontSize="sm">
+          {children}
+        </Text>
+      ),
+      code: ({ children }: any) => (
+        <Text
+          as="code"
+          bg="rgba(0,0,0,0.2)"
+          px="0.25em"
+          py="0.1em"
+          borderRadius="0.25em"
+          fontSize="0.85em"
+          fontFamily="mono"
+        >
+          {children}
+        </Text>
+      ),
+      pre: ({ children }: any) => (
+        <Box
+          as="pre"
+          bg="rgba(0,0,0,0.3)"
+          p={2}
+          borderRadius="md"
+          overflow="auto"
+          mt={2}
+          mb={2}
+          fontSize="0.85em"
+        >
+          {children}
+        </Box>
+      ),
+      strong: ({ children }: any) => (
+        <Text as="span" fontWeight="bold">
+          {children}
+        </Text>
+      ),
+      em: ({ children }: any) => (
+        <Text as="span" fontStyle="italic">
+          {children}
+        </Text>
+      ),
+    }),
+    []
+  );
+
+  const aiMarkdownComponents = useMemo(
+    () => ({
+      code({ node, inline, className, children, ...props }: any) {
+        const match = /language-(\w+)/.exec(className || "");
+        const language = match ? match[1] : "";
+        return !inline && match ? (
+          <Box mt={2} mb={2} borderRadius="md" overflow="hidden">
+            <SyntaxHighlighter
+              style={colorMode === "dark" ? vscDarkPlus : okaidia}
+              language={language}
+              PreTag="div"
+              customStyle={{
+                margin: 0,
+                borderRadius: "0.5rem",
+              }}
+              {...props}
+            >
+              {String(children).replace(/\n$/, "")}
+            </SyntaxHighlighter>
+          </Box>
+        ) : (
+          <Text
+            as="code"
+            bg={
+              colorMode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"
+            }
+            px="0.25em"
+            py="0.1em"
+            borderRadius="0.25em"
+            fontSize="0.9em"
+            fontFamily="mono"
+          >
+            {children}
+          </Text>
+        );
+      },
+      p: ({ children }: any) => (
+        <Text mb={2} lineHeight="1.6">
+          {children}
+        </Text>
+      ),
+      ul: ({ children }: any) => (
+        <Box as="ul" mb={2} pl={4}>
+          {children}
+        </Box>
+      ),
+      ol: ({ children }: any) => (
+        <Box as="ol" mb={2} pl={4}>
+          {children}
+        </Box>
+      ),
+      li: ({ children }: any) => (
+        <Text as="li" mb={1}>
+          {children}
+        </Text>
+      ),
+      h1: ({ children }: any) => (
+        <Text as="h1" fontSize="xl" fontWeight="bold" mb={2} mt={2}>
+          {children}
+        </Text>
+      ),
+      h2: ({ children }: any) => (
+        <Text as="h2" fontSize="lg" fontWeight="bold" mb={2} mt={2}>
+          {children}
+        </Text>
+      ),
+      h3: ({ children }: any) => (
+        <Text as="h3" fontSize="md" fontWeight="bold" mb={2} mt={2}>
+          {children}
+        </Text>
+      ),
+      blockquote: ({ children }: any) => (
+        <Box
+          as="blockquote"
+          borderLeft="3px solid"
+          borderColor={colorMode === "dark" ? "gray.600" : "gray.300"}
+          pl={3}
+          my={2}
+          fontStyle="italic"
+        >
+          {children}
+        </Box>
+      ),
+      a: ({ children, href }: any) => (
+        <Link
+          href={href}
+          color={colorMode === "dark" ? "blue.400" : "blue.600"}
+          textDecoration="underline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {children}
+        </Link>
+      ),
+      strong: ({ children }: any) => (
+        <Text as="span" fontWeight="bold">
+          {children}
+        </Text>
+      ),
+      em: ({ children }: any) => (
+        <Text as="span" fontStyle="italic">
+          {children}
+        </Text>
+      ),
+    }),
+    [colorMode]
+  );
 
   return (
     <>
@@ -47,7 +188,12 @@ export function MessageItem({
             color="white"
             boxShadow="0 2px 8px rgba(102, 126, 234, 0.3)"
           >
-            <Text whiteSpace="pre-wrap">{userText}</Text>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={userMarkdownComponents}
+            >
+              {userText}
+            </ReactMarkdown>
           </Box>
         </Flex>
       )}
@@ -55,18 +201,12 @@ export function MessageItem({
       {aiText && (
         <Flex justifyContent="flex-start" mb={3}>
           <Box maxW="70%" p={3}>
-            <Text whiteSpace="pre-wrap">
-              {aiText.split(/(\*\*.*?\*\*)/g).map((part, i) => {
-                if (part.startsWith("**") && part.endsWith("**")) {
-                  return (
-                    <Text as="span" key={i} fontWeight="bold">
-                      {part.slice(2, -2)}
-                    </Text>
-                  );
-                }
-                return part;
-              })}
-            </Text>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={aiMarkdownComponents}
+            >
+              {aiText}
+            </ReactMarkdown>
           </Box>
         </Flex>
       )}

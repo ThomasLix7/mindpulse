@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { Box, Button, Flex } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
@@ -33,58 +33,6 @@ export default function ChatRefactored({
     initUser();
   }, []);
 
-  useEffect(() => {
-    const resolveCourse = async () => {
-      if (courseId) {
-        setResolvedCourseId(courseId);
-        return;
-      }
-
-      if (learningPathId && !courseId && currentUser?.id) {
-        try {
-          const coursesResponse = await apiFetch(
-            `/api/courses?userId=${currentUser.id}`
-          );
-          if (!coursesResponse.ok) return;
-
-          const coursesData = await coursesResponse.json();
-          const pathCourses = coursesData.courses?.filter(
-            (c: any) => c.learning_path_id === learningPathId
-          );
-
-          if (pathCourses && pathCourses.length > 0) {
-            const sortedCourses = pathCourses.sort(
-              (a: any, b: any) => (a.course_order || 0) - (b.course_order || 0)
-            );
-            setResolvedCourseId(sortedCourses[0].id);
-          } else {
-            const createResponse = await apiFetch("/api/courses", {
-              method: "POST",
-              body: JSON.stringify({
-                userId: currentUser.id,
-                title: "Main Course",
-                learningPathId,
-              }),
-            });
-
-            if (createResponse.ok) {
-              const createData = await createResponse.json();
-              if (createData.success && createData.course) {
-                setResolvedCourseId(createData.course.id);
-              }
-            }
-          }
-        } catch (error) {
-          console.error("Error resolving course for learning path:", error);
-        }
-      }
-    };
-
-    if (currentUser?.id) {
-      resolveCourse();
-    }
-  }, [learningPathId, courseId, currentUser?.id]);
-
   const {
     courses,
     setCourses,
@@ -95,6 +43,104 @@ export default function ChatRefactored({
     getActiveCourse,
     createNewCourse,
   } = useCourses(resolvedCourseId, isHomePage);
+
+  const greetingCheckedRef = useRef<Set<string>>(new Set());
+  const isSendingRef = useRef(false);
+  const updateTimeoutRef = useRef<number | null>(null);
+  const pendingUpdateRef = useRef<{ id: string; text: string } | null>(null);
+  const isUpdatingRef = useRef(false);
+
+  useEffect(() => {
+    const resolveCourse = async () => {
+      if (courseId) {
+        setResolvedCourseId(courseId);
+        return;
+      }
+
+      if (learningPathId && !courseId && currentUser?.id) {
+        if (courses.length > 0) {
+          const pathCourses = courses.filter(
+            (c: any) => (c as any).learning_path_id === learningPathId
+          );
+          if (pathCourses.length > 0) {
+            const sortedCourses = pathCourses.sort(
+              (a: any, b: any) =>
+                ((a as any).course_order || 0) - ((b as any).course_order || 0)
+            );
+            setResolvedCourseId(sortedCourses[0].id);
+            return;
+          }
+        }
+      }
+    };
+
+    if (currentUser?.id) {
+      resolveCourse();
+    }
+  }, [learningPathId, courseId, currentUser?.id, courses]);
+
+  const updateStreamingResponse = useCallback(
+    (id: string, aiResponse: string) => {
+      pendingUpdateRef.current = { id, text: aiResponse };
+
+      if (isUpdatingRef.current) {
+        return;
+      }
+
+      const processUpdate = () => {
+        const pending = pendingUpdateRef.current;
+        if (!pending) {
+          isUpdatingRef.current = false;
+          return;
+        }
+
+        const pendingText = pending.text;
+        const pendingId = pending.id;
+
+        // Clear the ref first so new updates can be set while we process
+        pendingUpdateRef.current = null;
+
+        setCourses((prev) =>
+          prev.map((course) => {
+            if (course.id === pendingId) {
+              const updatedHistory = [...course.history];
+              const lastIndex = updatedHistory.length - 1;
+              if (lastIndex >= 0) {
+                updatedHistory[lastIndex] = {
+                  ...updatedHistory[lastIndex],
+                  ai: pendingText,
+                };
+              } else {
+                updatedHistory.push({ user: "", ai: pendingText });
+              }
+              return { ...course, history: updatedHistory };
+            }
+            return course;
+          })
+        );
+
+        // Check if there's a new pending update that came in while processing
+        isUpdatingRef.current = false;
+
+        const nextPending = pendingUpdateRef.current as {
+          id: string;
+          text: string;
+        } | null;
+        if (nextPending !== null && nextPending.id === pendingId) {
+          isUpdatingRef.current = true;
+          updateTimeoutRef.current = requestAnimationFrame(processUpdate);
+        }
+      };
+
+      if (updateTimeoutRef.current) {
+        cancelAnimationFrame(updateTimeoutRef.current);
+      }
+
+      isUpdatingRef.current = true;
+      updateTimeoutRef.current = requestAnimationFrame(processUpdate);
+    },
+    [setCourses]
+  );
 
   const {
     input,
@@ -109,72 +155,36 @@ export default function ChatRefactored({
     activeCourseId,
     user,
     createNewCourse,
-    updateCourseHistory: (id, userMessage, aiResponse) => {
-      setCourses((prev) =>
-        prev.map((course) => {
-          if (course.id === id) {
-            let updatedTitle = course.title;
-            if (course.history.length === 0 && userMessage.length > 0) {
-              updatedTitle =
-                userMessage.substring(0, 30) +
-                (userMessage.length > 30 ? "..." : "");
-            }
-            return {
-              ...course,
-              title: updatedTitle,
-              history: [
-                ...course.history,
-                { user: userMessage, ai: aiResponse },
-              ],
-            };
-          }
-          return course;
-        })
-      );
-    },
-    updateStreamingResponse: (id, aiResponse) => {
-      pendingUpdateRef.current = { id, text: aiResponse };
-
-      if (isUpdatingRef.current) {
-        return;
-      }
-
-      if (updateTimeoutRef.current) {
-        cancelAnimationFrame(updateTimeoutRef.current);
-      }
-
-      isUpdatingRef.current = true;
-      updateTimeoutRef.current = requestAnimationFrame(() => {
-        const pending = pendingUpdateRef.current;
-        if (pending) {
-          setCourses((prev) => {
-            return prev.map((course) => {
-              if (course.id === pending.id && course.history.length > 0) {
-                const updatedHistory = [...course.history];
-                const lastIndex = updatedHistory.length - 1;
-                updatedHistory[lastIndex] = {
-                  user: updatedHistory[lastIndex].user,
-                  ai: pending.text,
-                };
-                return { ...course, history: updatedHistory };
+    updateCourseHistory: useCallback(
+      (id: string, userMessage: string, aiResponse: string) => {
+        setCourses((prev) =>
+          prev.map((course) => {
+            if (course.id === id) {
+              let updatedTitle = course.title;
+              if (course.history.length === 0 && userMessage.length > 0) {
+                updatedTitle =
+                  userMessage.substring(0, 30) +
+                  (userMessage.length > 30 ? "..." : "");
               }
-              return course;
-            });
-          });
-          pendingUpdateRef.current = null;
-        }
-        isUpdatingRef.current = false;
-      });
-    },
+              return {
+                ...course,
+                title: updatedTitle,
+                history: [
+                  ...course.history,
+                  { user: userMessage, ai: aiResponse },
+                ],
+              };
+            }
+            return course;
+          })
+        );
+      },
+      [setCourses]
+    ),
+    updateStreamingResponse,
     getActiveCourse,
     isHomePage,
   });
-
-  const greetingCheckedRef = useRef<Set<string>>(new Set());
-  const isSendingRef = useRef(false);
-  const updateTimeoutRef = useRef<number | null>(null);
-  const pendingUpdateRef = useRef<{ id: string; text: string } | null>(null);
-  const isUpdatingRef = useRef(false);
 
   useEffect(() => {
     if (
@@ -236,72 +246,100 @@ export default function ChatRefactored({
         const decoder = new TextDecoder();
         let aiResponse = "";
         let buffer = "";
+        let pendingChars = "";
+        let updateTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const flushPending = () => {
+          if (pendingChars) {
+            aiResponse += pendingChars;
+            pendingChars = "";
+
+            if (!messageCreated) {
+              setCourses((prev) =>
+                prev.map((course) => {
+                  if (course.id === currentCourseId) {
+                    return {
+                      ...course,
+                      history: [...course.history, { user: "", ai: "" }],
+                    };
+                  }
+                  return course;
+                })
+              );
+              messageCreated = true;
+            }
+
+            if (updateTimeoutRef.current) {
+              cancelAnimationFrame(updateTimeoutRef.current);
+            }
+            updateTimeoutRef.current = requestAnimationFrame(() => {
+              setCourses((prev) =>
+                prev.map((course) => {
+                  if (
+                    course.id === currentCourseId &&
+                    course.history.length > 0
+                  ) {
+                    const updatedHistory = [...course.history];
+                    const lastIndex = updatedHistory.length - 1;
+                    updatedHistory[lastIndex] = {
+                      user: "",
+                      ai: aiResponse,
+                    };
+                    return { ...course, history: updatedHistory };
+                  }
+                  return course;
+                })
+              );
+            });
+          }
+          if (updateTimer) {
+            clearTimeout(updateTimer);
+            updateTimer = null;
+          }
+        };
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            flushPending();
+            break;
+          }
 
           buffer += decoder.decode(value, { stream: true });
 
-          while (buffer.length > 0) {
-            const char = buffer[0];
-            buffer = buffer.slice(1);
+          // Process SSE format: look for "data: " lines
+          let dataIndex = buffer.indexOf("data: ");
+          while (dataIndex !== -1) {
+            // Extract everything after "data: "
+            const afterData = buffer.slice(dataIndex + 6);
+            const endIndex = afterData.indexOf("\n\n");
 
-            if (char === "d" && buffer.startsWith("ata: ")) {
-              buffer = buffer.slice(5);
-              const endIndex = buffer.indexOf("\n\n");
-              if (endIndex === -1) continue;
-
-              const jsonStr = buffer.slice(0, endIndex);
-              buffer = buffer.slice(endIndex + 2);
-
-              try {
-                const data = JSON.parse(jsonStr);
-                if (data.text) {
-                  aiResponse += data.text;
-
-                  if (!messageCreated) {
-                    setCourses((prev) =>
-                      prev.map((course) => {
-                        if (course.id === currentCourseId) {
-                          return {
-                            ...course,
-                            history: [...course.history, { user: "", ai: "" }],
-                          };
-                        }
-                        return course;
-                      })
-                    );
-                    messageCreated = true;
-                  } else {
-                    if (updateTimeoutRef.current) {
-                      cancelAnimationFrame(updateTimeoutRef.current);
-                    }
-                    updateTimeoutRef.current = requestAnimationFrame(() => {
-                      setCourses((prev) =>
-                        prev.map((course) => {
-                          if (
-                            course.id === currentCourseId &&
-                            course.history.length > 0
-                          ) {
-                            const updatedHistory = [...course.history];
-                            const lastIndex = updatedHistory.length - 1;
-                            updatedHistory[lastIndex] = {
-                              user: "",
-                              ai: aiResponse,
-                            };
-                            return { ...course, history: updatedHistory };
-                          }
-                          return course;
-                        })
-                      );
-                    });
-                  }
-                }
-              } catch (e) {
-                console.error("JSON parse error:", e);
-              }
+            if (endIndex === -1) {
+              // Need more data, keep the buffer from "data: " onwards
+              buffer = buffer.slice(dataIndex);
+              break;
             }
+
+            const jsonStr = afterData.slice(0, endIndex).trim();
+            buffer = buffer.slice(dataIndex + 6 + endIndex + 2);
+
+            try {
+              const data = JSON.parse(jsonStr);
+              if (data.text) {
+                pendingChars += data.text;
+
+                // Batch updates: flush every 15 characters or after 100ms for smoother streaming
+                if (pendingChars.length >= 15) {
+                  flushPending();
+                } else if (!updateTimer) {
+                  updateTimer = setTimeout(flushPending, 100);
+                }
+              }
+            } catch (e) {
+              console.error("JSON parse error:", e);
+            }
+
+            dataIndex = buffer.indexOf("data: ");
           }
         }
       } catch (error) {
@@ -335,40 +373,21 @@ export default function ChatRefactored({
   } | null>(null);
 
   useEffect(() => {
-    const fetchLearningPathInfo = async () => {
-      if (!activeCourseId || !user?.id) return;
+    if (!activeCourseId || !courses.length) {
+      setLearningPathInfo(null);
+      return;
+    }
 
-      try {
-        const response = await apiFetch(
-          `/api/courses?userId=${user.id}&courseId=${activeCourseId}`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data.course?.learning_path_id) {
-            const pathResponse = await apiFetch(
-              `/api/learning-paths?userId=${user.id}&learningPathId=${data.course.learning_path_id}`
-            );
-            if (pathResponse.ok) {
-              const pathData = await pathResponse.json();
-              if (pathData.learningPath) {
-                setLearningPathInfo({
-                  title: pathData.learningPath.title,
-                  courseOrder: data.course.course_order || 0,
-                });
-                return;
-              }
-            }
-          }
-        }
-        setLearningPathInfo(null);
-      } catch (error) {
-        console.error("Error fetching learning path info:", error);
-        setLearningPathInfo(null);
-      }
-    };
-
-    fetchLearningPathInfo();
-  }, [activeCourseId, user?.id]);
+    const activeCourse = courses.find((c) => c.id === activeCourseId) as any;
+    if (activeCourse) {
+      setLearningPathInfo({
+        title: activeCourse.learning_path_id || "",
+        courseOrder: activeCourse.course_order || 0,
+      });
+    } else {
+      setLearningPathInfo(null);
+    }
+  }, [activeCourseId, courses]);
 
   return (
     <Flex
@@ -413,11 +432,7 @@ export default function ChatRefactored({
         </Box>
 
         <Box px={4} pb={4}>
-          <MessageList
-            course={activeCourse}
-            historyLoading={historyLoading}
-            user={user}
-          />
+          <MessageList course={activeCourse} historyLoading={historyLoading} />
         </Box>
       </Box>
 
@@ -427,7 +442,6 @@ export default function ChatRefactored({
         loading={loading}
         enableWebSearch={enableWebSearch}
         setEnableWebSearch={setEnableWebSearch}
-        user={user}
         onSubmit={handleSubmit}
       />
     </Flex>
