@@ -10,7 +10,13 @@ const memoriesCache = new Map<
   string,
   { memories: string; timestamp: number }
 >();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
+
+const messageCountCache = new Map<
+  string,
+  { count: number; timestamp: number }
+>();
+const COUNT_CACHE_TTL = 10 * 60 * 1000;
 
 function getCacheKey(courseId: string, userId: string): string {
   return `${userId}_${courseId}`;
@@ -46,6 +52,52 @@ function setCachedMemories(
 function invalidateMemoriesCache(courseId: string, userId: string): void {
   const key = getCacheKey(courseId, userId);
   memoriesCache.delete(key);
+}
+
+async function getMessageCount(
+  courseId: string,
+  supabase: any
+): Promise<number> {
+  const cached = messageCountCache.get(courseId);
+  if (cached && Date.now() - cached.timestamp < COUNT_CACHE_TTL) {
+    return cached.count;
+  }
+
+  const { count } = await supabase
+    .from("course_messages")
+    .select("*", { count: "exact", head: true })
+    .eq("course_id", courseId)
+    .eq("role", "user");
+
+  const initialCount = count || 0;
+  messageCountCache.set(courseId, {
+    count: initialCount,
+    timestamp: Date.now(),
+  });
+  return initialCount;
+}
+
+async function incrementMessageCount(
+  courseId: string,
+  supabase: any
+): Promise<number> {
+  const cached = messageCountCache.get(courseId);
+  const now = Date.now();
+
+  if (cached && now - cached.timestamp < COUNT_CACHE_TTL) {
+    const newCount = cached.count + 1;
+    messageCountCache.set(courseId, { count: newCount, timestamp: now });
+    return newCount;
+  } else {
+    const currentCount = await getMessageCount(courseId, supabase);
+    const newCount = currentCount + 1;
+    messageCountCache.set(courseId, { count: newCount, timestamp: now });
+    return newCount;
+  }
+}
+
+function invalidateMessageCountCache(courseId: string): void {
+  messageCountCache.delete(courseId);
 }
 
 async function loadCourseHistoryFromDatabase(
@@ -176,8 +228,28 @@ export async function POST(req: Request) {
           content: message,
           message_type: "text",
         });
+        const userMessageCount = await incrementMessageCount(
+          courseId,
+          supabase
+        );
+
+        const shouldUpdateSummary =
+          userMessageCount === 1 || userMessageCount % 20 === 0;
+
+        if (shouldUpdateSummary && validatedUserId) {
+          try {
+            await saveCourseSummary(courseId, validatedUserId, accessToken);
+            invalidateMemoriesCache(courseId, validatedUserId);
+          } catch (summaryError) {
+            console.error(
+              "[Memory Summary] Error in saveCourseSummary:",
+              summaryError
+            );
+          }
+        }
       } catch (msgErr) {
         console.error("Error inserting user message:", msgErr);
+        invalidateMessageCountCache(courseId);
       }
     }
 
@@ -410,40 +482,7 @@ Take charge of the learning - guide, challenge, and advance them through the mat
             }
           }
 
-          try {
-            const { count, error: countError } = await supabase
-              .from("course_messages")
-              .select("*", { count: "exact", head: true })
-              .eq("course_id", courseId)
-              .eq("role", "user");
-
-            if (countError) {
-              console.error(
-                "Error getting message count (special):",
-                countError
-              );
-            }
-
-            const userMessageCount = count || 0;
-            const shouldUpdateSummary =
-              userMessageCount === 1 || userMessageCount % 20 === 0;
-
-            if (shouldUpdateSummary && validatedUserId) {
-              try {
-                await saveCourseSummary(courseId, validatedUserId, accessToken);
-                invalidateMemoriesCache(courseId, validatedUserId);
-              } catch (summaryError) {
-                console.error(
-                  "[Memory Summary] Error in saveCourseSummary (special):",
-                  summaryError
-                );
-              }
-            }
-
-            await updateCourseTimestamp(courseId, accessToken);
-          } catch (error) {
-            console.error("Error saving memory (special):", error);
-          }
+          await updateCourseTimestamp(courseId, accessToken);
 
           controller.close();
           return;
@@ -542,37 +581,7 @@ ${
           console.error("Error inserting assistant message:", assistErr);
         }
 
-        try {
-          const { count, error: countError } = await supabase
-            .from("course_messages")
-            .select("*", { count: "exact", head: true })
-            .eq("course_id", courseId)
-            .eq("role", "user");
-
-          if (countError) {
-            console.error("Error getting message count:", countError);
-          }
-
-          const userMessageCount = count || 0;
-          const shouldUpdateSummary =
-            userMessageCount === 1 || userMessageCount % 2 === 0;
-
-          if (shouldUpdateSummary && validatedUserId) {
-            try {
-              await saveCourseSummary(courseId, validatedUserId, accessToken);
-              invalidateMemoriesCache(courseId, validatedUserId);
-            } catch (summaryError) {
-              console.error(
-                "[Memory Summary] Error in saveCourseSummary:",
-                summaryError
-              );
-            }
-          }
-
-          await updateCourseTimestamp(courseId, accessToken);
-        } catch (error) {
-          console.error("Error saving memory:", error);
-        }
+        await updateCourseTimestamp(courseId, accessToken);
 
         controller.close();
       },
