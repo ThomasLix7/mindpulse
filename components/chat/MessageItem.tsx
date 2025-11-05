@@ -3,6 +3,7 @@ import { useColorMode } from "@/components/ui/color-mode";
 import { Message } from "@/types/chat";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import {
   vscDarkPlus,
@@ -19,54 +20,6 @@ export function MessageItem({ message }: MessageItemProps) {
 
   const userText = message.user || (message as any).userMessage || "";
   const aiText = message.ai || (message as any).aiResponse || "";
-
-  const userMarkdownComponents = useMemo(
-    () => ({
-      p: ({ children }: any) => (
-        <Text mb={0} lineHeight="1.6" fontSize="sm">
-          {children}
-        </Text>
-      ),
-      code: ({ children }: any) => (
-        <Text
-          as="code"
-          bg="rgba(0,0,0,0.2)"
-          px="0.25em"
-          py="0.1em"
-          borderRadius="0.25em"
-          fontSize="0.85em"
-          fontFamily="mono"
-        >
-          {children}
-        </Text>
-      ),
-      pre: ({ children }: any) => (
-        <Box
-          as="pre"
-          bg="rgba(0,0,0,0.3)"
-          p={2}
-          borderRadius="md"
-          overflow="auto"
-          mt={2}
-          mb={2}
-          fontSize="0.85em"
-        >
-          {children}
-        </Box>
-      ),
-      strong: ({ children }: any) => (
-        <Text as="span" fontWeight="bold">
-          {children}
-        </Text>
-      ),
-      em: ({ children }: any) => (
-        <Text as="span" fontStyle="italic">
-          {children}
-        </Text>
-      ),
-    }),
-    []
-  );
 
   const aiMarkdownComponents = useMemo(
     () => ({
@@ -172,6 +125,7 @@ export function MessageItem({ message }: MessageItemProps) {
           {children}
         </Text>
       ),
+      br: () => <Box as="br" />,
     }),
     [colorMode]
   );
@@ -183,14 +137,14 @@ export function MessageItem({ message }: MessageItemProps) {
           <Box
             maxW="70%"
             p={3}
-            borderRadius="xl"
-            background="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-            color="white"
-            boxShadow="0 2px 8px rgba(102, 126, 234, 0.3)"
+            borderRadius="md"
+            bg={colorMode === "dark" ? "gray.800" : "gray.100"}
+            border="1px solid"
+            borderColor={colorMode === "dark" ? "gray.700" : "gray.200"}
           >
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={userMarkdownComponents}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
+              components={aiMarkdownComponents}
             >
               {userText}
             </ReactMarkdown>
@@ -202,7 +156,7 @@ export function MessageItem({ message }: MessageItemProps) {
         <Flex justifyContent="flex-start" mb={3}>
           <Box maxW="70%" p={3}>
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               components={aiMarkdownComponents}
             >
               {aiText}
