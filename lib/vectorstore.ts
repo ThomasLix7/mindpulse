@@ -11,7 +11,6 @@ const openaiApiKey = process.env.OPENAI_API_KEY;
 
 export async function getVectorStore(accessToken?: string) {
   try {
-    // Create a Supabase client
     const client = createClient(supabaseUrl, supabaseKey, {
       global: accessToken
         ? {
@@ -22,7 +21,6 @@ export async function getVectorStore(accessToken?: string) {
         : undefined,
     });
 
-    // Test the client connection
     const { data, error } = await client.from("profiles").select("id").limit(1);
 
     if (error) {
@@ -30,14 +28,48 @@ export async function getVectorStore(accessToken?: string) {
       return null;
     }
 
-    // Initialize embeddings model based on available API keys
     let embeddings;
     if (googleApiKey) {
       embeddings = new GoogleGenerativeAIEmbeddings({
         apiKey: googleApiKey,
-        modelName: "embedding-001",
+        modelName: "gemini-embedding-001",
         maxRetries: 0,
       });
+
+      embeddings.embedQuery = async function (text: string) {
+        const { GoogleGenerativeAI } = await import("@google/generative-ai");
+        const genAI = new GoogleGenerativeAI(googleApiKey);
+        const model = genAI.getGenerativeModel({
+          model: "gemini-embedding-001",
+        });
+
+        const result = await model.embedContent({
+          content: { role: "user", parts: [{ text }] },
+          outputDimensionality: 1536,
+        } as any);
+
+        return result.embedding.values;
+      };
+
+      embeddings.embedDocuments = async function (texts: string[]) {
+        const { GoogleGenerativeAI } = await import("@google/generative-ai");
+        const genAI = new GoogleGenerativeAI(googleApiKey);
+        const model = genAI.getGenerativeModel({
+          model: "gemini-embedding-001",
+        });
+
+        const embeddings = await Promise.all(
+          texts.map(async (text) => {
+            const result = await model.embedContent({
+              content: { role: "user", parts: [{ text }] },
+              outputDimensionality: 1536,
+            } as any);
+            return result.embedding.values;
+          })
+        );
+
+        return embeddings;
+      };
     } else if (openaiApiKey) {
       embeddings = new OpenAIEmbeddings({
         openAIApiKey: openaiApiKey,
@@ -47,17 +79,15 @@ export async function getVectorStore(accessToken?: string) {
       console.log(
         "⚠️ FALLBACK: No embedding models available - using direct Supabase client without embeddings"
       );
-      return client; // Fallback to client-only if no embedding models are available
+      return client;
     }
 
-    // Create the vector store with standard configuration for the new schema
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client,
       tableName: "ai_memories",
       queryName: "match_documents",
     });
 
-    // COMPLETELY REPLACE the addDocuments method with our own implementation
     vectorStore.addDocuments = async function (
       documents: Document[],
       options?: any
@@ -68,7 +98,6 @@ export async function getVectorStore(accessToken?: string) {
           return [];
         }
 
-        // Generate embeddings for the documents
         const texts = documents.map((doc) => doc.pageContent);
         let embeddings_vectors: number[][] = [];
 
@@ -78,29 +107,29 @@ export async function getVectorStore(accessToken?: string) {
         } catch (embeddingError) {
           console.error("Failed to generate embeddings:", embeddingError);
           console.log("Proceeding without embeddings");
-          // Continue without embeddings - we'll store the content but won't be able to do similarity search
           embeddings_vectors = documents.map(() => []);
         }
 
-        // Generate UUIDs for the documents
         const ids = documents.map(() => crypto.randomUUID());
 
-        // Clone the metadata to avoid modifying the original document
         const enhancedDocuments = documents.map((doc, i) => {
-          // Make sure we have the essential fields in the correct format
           const metadata = { ...doc.metadata };
+
+          const isLongterm =
+            metadata.isLongterm === true || metadata.is_longterm === true;
+
+          metadata.isLongterm = isLongterm;
 
           return {
             id: ids[i],
             content: doc.pageContent,
             metadata: metadata,
             embedding: embeddings_vectors[i] || null,
+            is_longterm: isLongterm,
           };
         });
 
-        // First try: Use a transaction to safely insert with the original method
         try {
-          // Implement each insert in a transaction
           for (let i = 0; i < enhancedDocuments.length; i++) {
             const doc = enhancedDocuments[i];
 
@@ -110,6 +139,7 @@ export async function getVectorStore(accessToken?: string) {
                 content: doc.content,
                 metadata: doc.metadata,
                 embedding: doc.embedding,
+                is_longterm: doc.is_longterm,
               });
 
               if (error) {
@@ -130,28 +160,23 @@ export async function getVectorStore(accessToken?: string) {
           return ids;
         } catch (transactionError) {
           console.error("Transaction insertion failed:", transactionError);
-
-          // If that fails, try our previous approach
           console.log("Falling back to individual insertions...");
         }
 
-        // Let's try direct insertion, one document at a time
         try {
           console.log("Trying standard insert approach...");
 
-          // Add each document individually to avoid failing all if one fails
           const successfulIds = [];
 
           for (let i = 0; i < enhancedDocuments.length; i++) {
             try {
               const doc = enhancedDocuments[i];
 
-              // Try direct insertion with minimal fields
               const { error } = await client.from("ai_memories").insert({
                 id: doc.id,
                 content: doc.content,
                 metadata: doc.metadata,
-                // Only include embedding if we have it
+                is_longterm: doc.is_longterm,
                 ...(doc.embedding ? { embedding: doc.embedding } : {}),
               });
 
@@ -218,7 +243,6 @@ export async function getVectorStore(accessToken?: string) {
           console.error("Simplified insert approach failed:", error);
         }
 
-        // If all else fails, try to use the fallback in saveMemory
         console.error("All insertion methods failed");
         throw new Error(
           "Could not insert documents using any available method"
@@ -229,7 +253,6 @@ export async function getVectorStore(accessToken?: string) {
       }
     };
 
-    // ALSO completely replace the similaritySearch method for consistent handling
     const originalSimilaritySearch =
       vectorStore.similaritySearch.bind(vectorStore);
     vectorStore.similaritySearch = async function (
@@ -237,78 +260,176 @@ export async function getVectorStore(accessToken?: string) {
       k = 4,
       filter = undefined
     ) {
-      try {
-        // Try the original method first
-        return await originalSimilaritySearch(query, k, filter);
-      } catch (error: any) {
-        console.error(
-          "Vector search failed, falling back to text search:",
-          error?.message || error
-        );
-
-        // Fallback to direct SQL query for text search
-        console.log("Falling back to text-based search");
+      if (
+        filter &&
+        ((filter as any).isLongterm !== undefined || (filter as any).userId)
+      ) {
         try {
-          let queryBuilder = client
+          const embeddings = (vectorStore as any).embeddings;
+          if (!embeddings) {
+            throw new Error("No embeddings model available");
+          }
+
+          const queryEmbedding = await embeddings.embedQuery(query);
+
+          let baseQuery = client
             .from("ai_memories")
-            .select("id, content, metadata, created_at");
+            .select("id, content, metadata, created_at, vector, is_longterm")
+            .not("vector", "is", null);
 
-          if (filter) {
-            // Handle userId filter - use column first, then metadata as fallback
-            if ((filter as any).userId) {
-              queryBuilder = queryBuilder.eq("user_id", (filter as any).userId);
-            }
-
-            // Handle isLongterm filter - use column first, then metadata as fallback
-            if ((filter as any).isLongterm !== undefined) {
-              queryBuilder = queryBuilder.eq(
-                "is_longterm",
-                (filter as any).isLongterm
-              );
-            }
-
-            // Handle courseId filter (metadata only, as it's not a column)
-            if ((filter as any).courseId) {
-              queryBuilder = queryBuilder.filter(
-                "metadata->>courseId",
-                "eq",
-                (filter as any).courseId
-              );
-            } else if ((filter as any).conversationId) {
-              // Backward compatibility
-              queryBuilder = queryBuilder.filter(
-                "metadata->>conversationId",
-                "eq",
-                (filter as any).conversationId
-              );
-            }
+          if ((filter as any).userId) {
+            baseQuery = baseQuery.eq("user_id", (filter as any).userId);
           }
 
-          // Use direct query with the client
-          const { data, error } = await queryBuilder
-            .order("created_at", { ascending: false })
-            .limit(k);
-
-          if (error) {
-            console.error("Direct query fallback failed:", error);
-            throw error;
+          if ((filter as any).isLongterm !== undefined) {
+            baseQuery = baseQuery.eq("is_longterm", (filter as any).isLongterm);
           }
 
-          // Convert to Document format
-          return (data || []).map(
+          const { data: filteredRecords, error: filterError } = await baseQuery;
+
+          if (filterError) {
+            throw filterError;
+          }
+
+          if (!filteredRecords || filteredRecords.length === 0) {
+            return [];
+          }
+          const resultsWithSimilarity = filteredRecords
+            .map((item: any) => {
+              let vector: number[] = null as any;
+
+              if (item.vector) {
+                if (Array.isArray(item.vector)) {
+                  vector = item.vector;
+                } else if (typeof item.vector === "string") {
+                  try {
+                    vector = JSON.parse(item.vector);
+                  } catch (e) {
+                    return null;
+                  }
+                } else if (
+                  item.vector &&
+                  typeof item.vector === "object" &&
+                  "toArray" in item.vector
+                ) {
+                  vector = item.vector.toArray();
+                }
+              }
+
+              if (
+                !vector ||
+                !Array.isArray(vector) ||
+                vector.length !== queryEmbedding.length
+              ) {
+                return null;
+              }
+              const dotProduct = queryEmbedding.reduce(
+                (sum: number, val: number, i: number) => sum + val * vector[i],
+                0
+              );
+              const queryMagnitude = Math.sqrt(
+                queryEmbedding.reduce(
+                  (sum: number, val: number) => sum + val * val,
+                  0
+                )
+              );
+              const itemMagnitude = Math.sqrt(
+                vector.reduce((sum: number, val: number) => sum + val * val, 0)
+              );
+
+              if (queryMagnitude === 0 || itemMagnitude === 0) {
+                return null;
+              }
+
+              const similarity = dotProduct / (queryMagnitude * itemMagnitude);
+
+              if (isNaN(similarity) || !isFinite(similarity)) {
+                return null;
+              }
+
+              return {
+                ...item,
+                similarity,
+              };
+            })
+            .filter((item: any) => item !== null)
+            .sort((a: any, b: any) => b.similarity - a.similarity)
+            .slice(0, k);
+
+          return resultsWithSimilarity.map(
             (item: any) =>
               new Document({
                 pageContent: item.content,
                 metadata: {
                   ...(item.metadata || {}),
+                  id: item.id,
+                  is_longterm: item.is_longterm,
                   timestamp: item.created_at
                     ? new Date(item.created_at).getTime()
                     : Date.now(),
                 },
               })
           );
-        } catch (fallbackError) {
-          console.error("All search attempts failed:", fallbackError);
+        } catch (error: any) {
+          console.error(
+            "Vector search with filters failed, falling back:",
+            error?.message || error
+          );
+        }
+      }
+
+      // Fallback: text-based search with filters
+      try {
+        let queryBuilder = client
+          .from("ai_memories")
+          .select("id, content, metadata, created_at");
+
+        if (filter) {
+          if ((filter as any).userId) {
+            queryBuilder = queryBuilder.eq("user_id", (filter as any).userId);
+          }
+
+          if ((filter as any).isLongterm !== undefined) {
+            queryBuilder = queryBuilder.eq(
+              "is_longterm",
+              (filter as any).isLongterm
+            );
+          }
+
+          if ((filter as any).courseId) {
+            queryBuilder = queryBuilder.filter(
+              "metadata->>courseId",
+              "eq",
+              (filter as any).courseId
+            );
+          }
+        }
+
+        const { data, error } = await queryBuilder
+          .order("created_at", { ascending: false })
+          .limit(k);
+
+        if (error) {
+          throw error;
+        }
+
+        return (data || []).map(
+          (item: any) =>
+            new Document({
+              pageContent: item.content,
+              metadata: {
+                ...(item.metadata || {}),
+                timestamp: item.created_at
+                  ? new Date(item.created_at).getTime()
+                  : Date.now(),
+              },
+            })
+        );
+      } catch (fallbackError) {
+        try {
+          return await originalSimilaritySearch(query, k, filter);
+        } catch (originalError) {
+          console.error("All search attempts failed:", originalError);
           return [];
         }
       }

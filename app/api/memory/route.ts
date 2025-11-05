@@ -67,12 +67,10 @@ async function validateUserId(userId: string) {
 
 export async function GET(request: Request) {
   try {
-    // Get the URL parameters
     const url = new URL(request.url);
     const userId = url.searchParams.get("userId");
     const query = url.searchParams.get("query");
 
-    // Check that we have a userId
     if (!userId) {
       return NextResponse.json(
         {
@@ -83,7 +81,6 @@ export async function GET(request: Request) {
       );
     }
 
-    // Validate the user ID
     const validation = await validateUserId(userId);
     if (!validation.valid && validation.error) {
       return NextResponse.json(
@@ -92,17 +89,14 @@ export async function GET(request: Request) {
       );
     }
 
-    // If no query is provided or a special "all" query, get all memories directly
     if (
       !query ||
       query.trim() === "" ||
       query.toLowerCase() === "all memories"
     ) {
       try {
-        // Get all long-term memories directly from the database using the new schema
         const supabaseServer = await createServerClient();
 
-        // First try with the direct column
         const { data: directData, error: directError } = await supabaseServer
           .from("ai_memories")
           .select("id, content, metadata, created_at")
@@ -114,7 +108,6 @@ export async function GET(request: Request) {
           console.error("Error querying with is_longterm column:", directError);
         }
 
-        // Also try with the metadata field for backward compatibility
         const { data: metadataData, error: metadataError } =
           await supabaseServer
             .from("ai_memories")
@@ -130,7 +123,6 @@ export async function GET(request: Request) {
           );
         }
 
-        // Combine results and remove duplicates
         let allData: any[] = [];
 
         if (directData && directData.length > 0) {
@@ -144,7 +136,6 @@ export async function GET(request: Request) {
           console.log(
             `Found ${metadataData.length} memories with metadata.isLongterm=true`
           );
-          // Add only non-duplicate entries
           metadataData.forEach((item) => {
             if (!allData.some((existing) => existing.id === item.id)) {
               allData.push(item);
@@ -152,7 +143,6 @@ export async function GET(request: Request) {
           });
         }
 
-        // Log combined results
         console.log(`Total combined long-term memories: ${allData.length}`);
 
         if (allData.length === 0) {
@@ -163,7 +153,6 @@ export async function GET(request: Request) {
           });
         }
 
-        // Process the memories
         const processedMemories = allData.map((item) => {
           try {
             const content = item.content;
@@ -214,14 +203,11 @@ export async function GET(request: Request) {
       }
     }
 
-    // If we reach here, use the vector search with the provided query
     const searchQuery = query || "personal information";
 
     try {
-      // Retrieve long-term memories
       const memories = await recallLongTermMemory(userId, searchQuery);
 
-      // Log the number of memories found by the vector search
       console.log(`Vector search found ${memories.length} long-term memories`);
 
       // If vector search didn't find anything, try a direct database query as fallback
@@ -232,7 +218,6 @@ export async function GET(request: Request) {
 
         const supabaseServer = await createServerClient();
 
-        // First try with the direct column
         const { data: directData, error: directError } = await supabaseServer
           .from("ai_memories")
           .select("id, content, metadata, created_at")
@@ -244,7 +229,6 @@ export async function GET(request: Request) {
           console.error("Error querying with is_longterm column:", directError);
         }
 
-        // Also try with the metadata field for backward compatibility
         const { data: metadataData, error: metadataError } =
           await supabaseServer
             .from("ai_memories")
@@ -260,7 +244,6 @@ export async function GET(request: Request) {
           );
         }
 
-        // Combine results
         let allData: any[] = [];
 
         if (directData && directData.length > 0) {
@@ -274,7 +257,6 @@ export async function GET(request: Request) {
           console.log(
             `Found ${metadataData.length} memories with metadata.isLongterm=true`
           );
-          // Add only non-duplicate entries
           metadataData.forEach((item) => {
             if (!allData.some((existing) => existing.id === item.id)) {
               allData.push(item);
@@ -287,7 +269,6 @@ export async function GET(request: Request) {
             `Found ${allData.length} long-term memories via direct query`
           );
 
-          // Convert to Document format
           const directMemories = allData.map((item) => ({
             pageContent: item.content,
             metadata: {
@@ -298,15 +279,12 @@ export async function GET(request: Request) {
             },
           }));
 
-          // Process these memories instead
           const processedMemories = directMemories.map((memory) => {
             try {
               const content = memory.pageContent;
-              // Each content should be in the format "USER: message\nAI: response"
               const parts = content.split("\nAI: ");
 
               if (parts.length !== 2) {
-                // Return as-is for malformed entries
                 return {
                   content,
                   timestamp: memory.metadata.timestamp,
@@ -325,7 +303,6 @@ export async function GET(request: Request) {
                 id: memory.metadata.id,
               };
             } catch (error) {
-              // Return raw content for entries that can't be parsed
               console.error("Error parsing memory entry:", error);
               return {
                 content: memory.pageContent,
@@ -335,7 +312,6 @@ export async function GET(request: Request) {
             }
           });
 
-          // Return these memories
           return NextResponse.json({
             memories: processedMemories,
             count: processedMemories.length,
@@ -344,21 +320,18 @@ export async function GET(request: Request) {
         }
       }
 
-      // Process the memories into a more readable format
       const processedMemories = memories.map((memory) => {
         try {
-          // Extract user and AI parts from memory
           const content = memory.pageContent || "";
-          const metadataId = memory.metadata?.id || ""; // Get ID from metadata
+          const metadataId = memory.metadata?.id || "";
 
-          // Each content should be in the format "USER: message\nAI: response"
           const parts = content.split("\nAI: ");
 
           if (parts.length !== 2) {
             return {
               content,
               timestamp: memory.metadata?.timestamp || Date.now(),
-              id: metadataId, // Include the memory ID
+              id: metadataId,
             };
           }
 
@@ -370,19 +343,18 @@ export async function GET(request: Request) {
             aiResponse,
             timestamp: memory.metadata?.timestamp || Date.now(),
             type: memory.metadata?.type || "chat",
-            id: metadataId, // Include the memory ID
+            id: metadataId,
           };
         } catch (error) {
           console.error("Error parsing memory:", error);
           return {
             content: memory.pageContent || "",
             timestamp: memory.metadata?.timestamp || Date.now(),
-            id: memory.metadata?.id || "", // Include the memory ID
+            id: memory.metadata?.id || "",
           };
         }
       });
 
-      // Return the processed memories
       return NextResponse.json({
         memories: processedMemories,
         count: memories.length,
@@ -406,10 +378,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Parse the request
     const { memoryId, userId, userMessage, aiResponse } = await request.json();
 
-    // Validate required parameters
     if (!userId) {
       return NextResponse.json(
         {
@@ -434,7 +404,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate the user ID
     const validation = await validateUserId(userId);
     if (!validation.valid && validation.error) {
       return NextResponse.json(
@@ -447,7 +416,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create options object based on provided parameters
     const options: {
       memoryId?: string;
       userMessage?: string;
@@ -463,7 +431,6 @@ export async function POST(request: Request) {
       options.aiResponse = aiResponse;
     }
 
-    // Log the request for debugging
     console.log("Attempting to save to long-term memory:", {
       userId,
       memoryId: options.memoryId,
@@ -471,7 +438,6 @@ export async function POST(request: Request) {
       hasAiResponse: !!options.aiResponse,
     });
 
-    // Save to long-term memory using the unified function
     const success = await saveToLongTermMemory(userId, options);
 
     if (success) {
@@ -480,7 +446,6 @@ export async function POST(request: Request) {
         message: "Memory has been saved to long-term memory",
       });
     } else {
-      // Enhanced error response when saving fails
       return NextResponse.json(
         {
           success: false,
@@ -516,12 +481,10 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    // Parse the request from URL parameters for DELETE
     const url = new URL(request.url);
     const userId = url.searchParams.get("userId");
     const memoryId = url.searchParams.get("memoryId");
 
-    // Validate required parameters
     if (!userId) {
       return NextResponse.json(
         {
@@ -544,7 +507,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Validate the user ID
     const validation = await validateUserId(userId);
     if (!validation.valid && validation.error) {
       return NextResponse.json(
@@ -557,10 +519,8 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Get database client
     const supabaseServer = await createServerClient();
 
-    // Check if memory exists and belongs to user
     const { data: memoryData, error: memoryError } = await supabaseServer
       .from("ai_memories")
       .select("user_id, metadata, course_id, is_longterm")
@@ -579,7 +539,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Verify that the memory belongs to the user
     if (memoryData.user_id !== userId) {
       return NextResponse.json(
         {
@@ -593,22 +552,16 @@ export async function DELETE(request: Request) {
 
     console.log(`Processing forget/delete request for memory ID: ${memoryId}`);
 
-    // First check if this memory has a course_id
     if (memoryData.course_id) {
       console.log(`Memory has course_id: ${memoryData.course_id}`);
 
-      // Check if the associated course still exists
-      console.log(
-        `Checking if course ${memoryData.course_id} exists...`
-      );
-      const { data: courseData, error: courseError } =
-        await supabaseServer
-          .from("courses")
-          .select("id")
-          .eq("id", memoryData.course_id)
-          .single();
+      console.log(`Checking if course ${memoryData.course_id} exists...`);
+      const { data: courseData, error: courseError } = await supabaseServer
+        .from("courses")
+        .select("id")
+        .eq("id", memoryData.course_id)
+        .single();
 
-      // If course fetch had an error or returned no data, it doesn't exist
       if (courseError) {
         console.log(`Error finding course: ${courseError.message}`);
       }
@@ -618,7 +571,6 @@ export async function DELETE(request: Request) {
           `Course ${memoryData.course_id} NOT FOUND - will delete memory completely`
         );
 
-        // Delete the memory record completely
         const { error: deleteError } = await supabaseServer
           .from("ai_memories")
           .delete()
@@ -651,13 +603,8 @@ export async function DELETE(request: Request) {
       console.log(`Memory ${memoryId} has no course_id`);
     }
 
-    // If we reach here, either:
-    // 1. The course still exists, or
-    // 2. There is no course_id to check
-    // So we'll update the is_longterm flag as before
     console.log(`Updating memory ${memoryId} to set is_longterm=false`);
 
-    // Check for inconsistencies between column and metadata
     if (memoryData.is_longterm !== (memoryData.metadata?.isLongterm === true)) {
       console.log(
         `Memory ${memoryId} has inconsistent long-term flags, fixing both`
@@ -721,10 +668,8 @@ export async function DELETE(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    // Parse the request
     const { courseId, userMessage, userId } = await request.json();
 
-    // Validate required parameters
     if (!userId) {
       return NextResponse.json(
         { error: "User ID is required", success: false },
@@ -746,7 +691,6 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Validate the user ID
     const validation = await validateUserId(userId);
     if (!validation.valid && validation.error) {
       return NextResponse.json(
@@ -759,7 +703,6 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Get vector store or Supabase client to interact with database
     const result = await getVectorStore();
     if (!result) {
       console.error("Database client initialization failed");
@@ -773,18 +716,13 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Extract the Supabase client from different possible structures
     let client;
     if (result instanceof SupabaseVectorStore) {
-      console.log("Using client from SupabaseVectorStore");
       client = (result as any).client;
     } else if ("from" in result) {
-      console.log("Using direct Supabase client");
       client = result as SupabaseClient;
     } else {
       console.error("Invalid vector store structure");
-      console.log("Vector store type:", typeof result);
-      console.log("Vector store properties:", Object.keys(result));
       return NextResponse.json(
         {
           error: "Database client missing required methods",
@@ -808,8 +746,6 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Format of content in the database: "USER: {message}\nAI: {response}"
-    // We need to search for the user message part
     const { data: memories, error: searchError } = await client
       .from("ai_memories")
       .select("id, content, metadata, course_id, created_at")
@@ -845,11 +781,9 @@ export async function PUT(request: Request) {
       `Found ${memories.length} memories for course, searching for best match...`
     );
 
-    // Find the memory that contains the user message
     let bestMatch = null;
     let bestScore = -1;
 
-    // Create a normalized version of the user message for matching
     const normalizedUserMessage = userMessage.replace(/\s+/g, "").toLowerCase();
     console.log(
       `Normalized user message to match: ${normalizedUserMessage.substring(
@@ -858,20 +792,16 @@ export async function PUT(request: Request) {
       )}...`
     );
 
-    // First, try to find an exact match by extracting user part
     for (const memory of memories) {
       try {
-        // Extract the USER part from "USER: {message}\nAI: {response}"
         const parts = memory.content.split("\nAI:");
         if (parts.length >= 1) {
           const userPart = parts[0].replace("USER:", "").trim();
 
-          // Log for debugging
           console.log(`Comparing with memory ${memory.id}:`);
           console.log(`- Memory USER part: ${userPart.substring(0, 50)}...`);
           console.log(`- Looking for: ${userMessage.substring(0, 50)}...`);
 
-          // Check for exact match first
           if (userPart === userMessage) {
             console.log(`EXACT MATCH FOUND: Memory ID ${memory.id}`);
             return NextResponse.json({
@@ -880,22 +810,17 @@ export async function PUT(request: Request) {
             });
           }
 
-          // Next, try normalized comparison
           const normalizedContent = userPart.replace(/\s+/g, "").toLowerCase();
 
-          // Calculate similarity score (higher is better)
           let score = 0;
 
-          // First check if one string contains the other completely
           if (
             normalizedContent.includes(normalizedUserMessage) ||
             normalizedUserMessage.includes(normalizedContent)
           ) {
-            // Boost score for complete containment
             score += 1000;
           }
 
-          // Then check for substring matching (beginning of the user message is most important)
           const searchSubstring = normalizedUserMessage.substring(
             0,
             Math.min(50, normalizedUserMessage.length)
@@ -904,13 +829,11 @@ export async function PUT(request: Request) {
           if (normalizedContent.includes(searchSubstring)) {
             score += 500;
 
-            // Add additional points for matching percentage
             const matchPercent =
               searchSubstring.length / normalizedUserMessage.length;
             score += Math.floor(matchPercent * 100);
           }
 
-          // Log score for debugging
           if (score > 0) {
             console.log(`Potential match (score ${score}): ${memory.id}`);
           }
@@ -925,22 +848,18 @@ export async function PUT(request: Request) {
       }
     }
 
-    // If we haven't found anything yet, fall back to the original method
     if (!bestMatch) {
       for (const memory of memories) {
-        // Try original matching method as fallback
         const normalizedContent = memory.content
           .replace(/\s+/g, "")
           .toLowerCase();
 
-        // Check if memory content contains the start of the user message (partial match)
         const searchSubstring = normalizedUserMessage.substring(
           0,
           Math.min(30, normalizedUserMessage.length)
         );
 
         if (normalizedContent.includes(searchSubstring)) {
-          // Simple scoring based on memory length
           const score = memory.content.length;
 
           console.log(`Fallback match (score ${score}): ${memory.id}`);
@@ -963,9 +882,7 @@ export async function PUT(request: Request) {
       });
     }
 
-    console.log(
-      `No matching memory found for message in course: ${courseId}`
-    );
+    console.log(`No matching memory found for message in course: ${courseId}`);
     return NextResponse.json(
       {
         error: "No matching memory found for this message",

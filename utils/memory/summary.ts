@@ -1,7 +1,7 @@
 import { getVectorStore } from "@/lib/vectorstore";
 import { model } from "@/lib/gemini";
+import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
-// Generate course summary from recent course messages
 async function generateCourseSummary(
   courseId: string,
   userId: string,
@@ -9,13 +9,19 @@ async function generateCourseSummary(
 ): Promise<string | null> {
   try {
     const vectorStore = await getVectorStore(accessToken);
-    if (!vectorStore || !("from" in vectorStore)) {
+    if (!vectorStore) {
       return null;
     }
 
-    // Get previous summary (most recent)
+    const isVectorStore = vectorStore instanceof SupabaseVectorStore;
+    const client = isVectorStore ? (vectorStore as any).client : vectorStore;
+
+    if (!client || typeof client.from !== "function") {
+      return null;
+    }
+
     let previousSummary: string | null = null;
-    const { data: existingSummary } = await vectorStore
+    const { data: existingSummary } = await client
       .from("ai_memories")
       .select("content, created_at")
       .eq("course_id", courseId)
@@ -31,14 +37,19 @@ async function generateCourseSummary(
     }
 
     // Get last 30 messages for summarization
-    const { data: recentMessages, error: msgError } = await vectorStore
+    const { data: recentMessages, error: msgError } = await client
       .from("course_messages")
       .select("role, content, created_at")
       .eq("course_id", courseId)
       .order("created_at", { ascending: false })
       .limit(30);
 
-    if (msgError || !recentMessages || recentMessages.length === 0) {
+    if (msgError) {
+      console.error("Error fetching messages:", msgError);
+      return null;
+    }
+
+    if (!recentMessages || recentMessages.length === 0) {
       return null;
     }
 
@@ -80,16 +91,13 @@ Current Focus: [what we're working on now]`;
 
     const chatSession = model.startChat();
     const result = await chatSession.sendMessage(prompt);
-    const summary = result.response.text();
-
-    return summary;
+    return result.response.text();
   } catch (error) {
     console.error("Error generating course summary:", error);
     return null;
   }
 }
 
-// Save/update course summary in short-term memory
 export async function saveCourseSummary(
   courseId: string,
   userId: string,
@@ -97,18 +105,35 @@ export async function saveCourseSummary(
 ): Promise<boolean> {
   try {
     const summary = await generateCourseSummary(courseId, userId, accessToken);
-
     if (!summary) {
       return false;
     }
 
     const vectorStore = await getVectorStore(accessToken);
-    if (!vectorStore || !("from" in vectorStore)) {
+    if (!vectorStore) {
       return false;
     }
 
-    // Always insert new summary to preserve history
-    const summaryData = {
+    const isVectorStore = vectorStore instanceof SupabaseVectorStore;
+    const client = isVectorStore ? (vectorStore as any).client : vectorStore;
+
+    if (!client || typeof client.from !== "function") {
+      return false;
+    }
+
+    let embedding: number[] | null = null;
+    if (isVectorStore) {
+      try {
+        const embeddings = (vectorStore as any).embeddings;
+        if (embeddings) {
+          embedding = await embeddings.embedQuery(summary);
+        }
+      } catch (embedError) {
+        console.error("Error generating embedding:", embedError);
+      }
+    }
+
+    const summaryData: any = {
       content: summary,
       metadata: {
         courseId: courseId,
@@ -123,15 +148,18 @@ export async function saveCourseSummary(
       user_id: userId,
     };
 
-    const { error } = await vectorStore
-      .from("ai_memories")
-      .insert([summaryData]);
+    if (embedding && embedding.length > 0) {
+      summaryData.vector = embedding;
+    } else {
+      summaryData.vector = new Array(1536).fill(0);
+    }
+
+    const { error } = await client.from("ai_memories").insert([summaryData]);
 
     if (error) {
       console.error("Error saving course summary:", error);
       return false;
     }
-    console.log("Saved new course summary for course:", courseId);
 
     return true;
   } catch (error) {

@@ -157,28 +157,28 @@ export default function ChatRefactored({
     createNewCourse,
     updateCourseHistory: useCallback(
       (id: string, userMessage: string, aiResponse: string) => {
-        setCourses((prev) =>
-          prev.map((course) => {
-            if (course.id === id) {
-              let updatedTitle = course.title;
-              if (course.history.length === 0 && userMessage.length > 0) {
-                updatedTitle =
-                  userMessage.substring(0, 30) +
-                  (userMessage.length > 30 ? "..." : "");
-              }
-              return {
-                ...course,
-                title: updatedTitle,
-                history: [
-                  ...course.history,
-                  { user: userMessage, ai: aiResponse },
-                ],
-              };
+      setCourses((prev) =>
+        prev.map((course) => {
+          if (course.id === id) {
+            let updatedTitle = course.title;
+            if (course.history.length === 0 && userMessage.length > 0) {
+              updatedTitle =
+                userMessage.substring(0, 30) +
+                (userMessage.length > 30 ? "..." : "");
             }
-            return course;
-          })
-        );
-      },
+            return {
+              ...course,
+              title: updatedTitle,
+              history: [
+                ...course.history,
+                { user: userMessage, ai: aiResponse },
+              ],
+            };
+          }
+          return course;
+        })
+      );
+    },
       [setCourses]
     ),
     updateStreamingResponse,
@@ -254,48 +254,48 @@ export default function ChatRefactored({
             aiResponse += pendingChars;
             pendingChars = "";
 
-            if (!messageCreated) {
-              setCourses((prev) =>
-                prev.map((course) => {
-                  if (course.id === currentCourseId) {
-                    return {
-                      ...course,
-                      history: [...course.history, { user: "", ai: "" }],
-                    };
-                  }
-                  return course;
-                })
-              );
-              messageCreated = true;
+                  if (!messageCreated) {
+                    setCourses((prev) =>
+                      prev.map((course) => {
+                        if (course.id === currentCourseId) {
+                          return {
+                            ...course,
+                            history: [...course.history, { user: "", ai: "" }],
+                          };
+                        }
+                        return course;
+                      })
+                    );
+                    messageCreated = true;
             }
 
-            if (updateTimeoutRef.current) {
-              cancelAnimationFrame(updateTimeoutRef.current);
-            }
-            updateTimeoutRef.current = requestAnimationFrame(() => {
-              setCourses((prev) =>
-                prev.map((course) => {
-                  if (
-                    course.id === currentCourseId &&
-                    course.history.length > 0
-                  ) {
-                    const updatedHistory = [...course.history];
-                    const lastIndex = updatedHistory.length - 1;
-                    updatedHistory[lastIndex] = {
-                      user: "",
-                      ai: aiResponse,
-                    };
-                    return { ...course, history: updatedHistory };
+                    if (updateTimeoutRef.current) {
+                      cancelAnimationFrame(updateTimeoutRef.current);
+                    }
+                    updateTimeoutRef.current = requestAnimationFrame(() => {
+                      setCourses((prev) =>
+                        prev.map((course) => {
+                          if (
+                            course.id === currentCourseId &&
+                            course.history.length > 0
+                          ) {
+                            const updatedHistory = [...course.history];
+                            const lastIndex = updatedHistory.length - 1;
+                            updatedHistory[lastIndex] = {
+                              user: "",
+                              ai: aiResponse,
+                            };
+                            return { ...course, history: updatedHistory };
+                          }
+                          return course;
+                        })
+                      );
+                    });
                   }
-                  return course;
-                })
-              );
-            });
-          }
           if (updateTimer) {
             clearTimeout(updateTimer);
             updateTimer = null;
-          }
+                }
         };
 
         while (true) {
@@ -337,7 +337,7 @@ export default function ChatRefactored({
               }
             } catch (e) {
               console.error("JSON parse error:", e);
-            }
+              }
 
             dataIndex = buffer.indexOf("data: ");
           }

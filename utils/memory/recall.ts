@@ -28,6 +28,21 @@ async function getLongTermMemories(
   userId: string,
   useVectorSearch: boolean
 ): Promise<Document[]> {
+  const { count, error: checkError } = await client
+    .from("ai_memories")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("is_longterm", true);
+
+  if (checkError) {
+    console.error("Error checking for longterm memories:", checkError);
+    return [];
+  }
+
+  if (!count || count === 0) {
+    return [];
+  }
+
   if (useVectorSearch && vectorStore instanceof SupabaseVectorStore) {
     try {
       const searchResults = await vectorStore.similaritySearch(
@@ -38,10 +53,8 @@ async function getLongTermMemories(
           isLongterm: true,
         }
       );
+
       if (searchResults && searchResults.length > 0) {
-        console.log(
-          `Found ${searchResults.length} relevant memories via vector search`
-        );
         return searchResults;
       }
     } catch (error: any) {
@@ -54,7 +67,7 @@ async function getLongTermMemories(
 
   const { data: longTermData, error } = await client
     .from("ai_memories")
-    .select("id, content, metadata, created_at")
+    .select("id, content, metadata, created_at, is_longterm")
     .eq("user_id", userId)
     .eq("is_longterm", true)
     .order("created_at", { ascending: false })
@@ -101,10 +114,6 @@ export async function recallMemory(
   accessToken?: string
 ): Promise<Document[]> {
   try {
-    console.log(
-      `Recalling memory for course: ${courseId}, user: ${userId || "anonymous"}`
-    );
-
     const vectorStore = await getVectorStore(accessToken);
     if (!vectorStore) {
       console.error("Vector store failed to initialize.");

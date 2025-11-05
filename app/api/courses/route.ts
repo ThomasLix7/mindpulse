@@ -26,7 +26,6 @@ interface MemoryRow {
 
 export async function GET(request: Request) {
   try {
-    // Get the user ID from query params
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     const courseId = searchParams.get("courseId");
@@ -39,7 +38,6 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get access token from Authorization header
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
@@ -48,12 +46,10 @@ export async function GET(request: Request) {
       );
     }
 
-    const accessToken = authHeader.substring(7); // Remove "Bearer " prefix
+    const accessToken = authHeader.substring(7);
 
-    // Create server client with user context so RLS uses auth.uid()
     const supabase = await createServerClient(accessToken);
 
-    // Set the user session using the access token
     const {
       data: { user },
       error: authError,
@@ -66,12 +62,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Verify the user ID matches the token
     if (user.id !== userId) {
       return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
     }
 
-    // Verify the user exists
     const { data: userData, error: userError } = await supabase
       .from("profiles")
       .select("id")
@@ -82,9 +76,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Invalid user ID" }, { status: 403 });
     }
 
-    // If a specific course history is requested
     if (courseId) {
-      // First get the course metadata
       const { data: course, error: pathError } = await supabase
         .from("courses")
         .select("*")
@@ -99,7 +91,6 @@ export async function GET(request: Request) {
         );
       }
 
-      // Get the history
       const historyResponse = await getCourseHistory(
         courseId,
         userId,
@@ -107,7 +98,6 @@ export async function GET(request: Request) {
       );
       const historyData = await historyResponse.json();
 
-      // Return both the course and its history
       return NextResponse.json({
         course: {
           ...course,
@@ -118,7 +108,6 @@ export async function GET(request: Request) {
       });
     }
 
-    // Get all courses for the user
     const { data: courses, error } = await supabase
       .from("courses")
       .select("*")
@@ -133,15 +122,12 @@ export async function GET(request: Request) {
       );
     }
 
-    // If includeHistory is true, fetch history for each course
-    // But ONLY if explicitly requested to avoid unnecessary database queries
     if (includeHistory && courses) {
       console.log(
         `Fetching history for ${courses.length} courses (requested with includeHistory)`
       );
       try {
-        // Limit the number of courses we load history for to avoid overloading the database
-        const coursesToFetch = courses.slice(0, 5); // Only fetch history for the 5 most recent
+        const coursesToFetch = courses.slice(0, 5);
 
         const coursesWithHistory = await Promise.all(
           coursesToFetch.map(async (course) => {
@@ -159,7 +145,6 @@ export async function GET(request: Request) {
           })
         );
 
-        // For the remaining courses, include them without history
         const remainingCourses = courses.slice(5).map((course) => ({
           ...course,
           history: [],
@@ -171,11 +156,9 @@ export async function GET(request: Request) {
         });
       } catch (error) {
         console.error("Error fetching courses with history:", error);
-        // Fall back to just returning courses without history
       }
     }
 
-    // Return courses without history (more efficient)
     return NextResponse.json({
       courses,
       success: true,
@@ -195,10 +178,6 @@ async function getCourseHistory(
   accessToken: string
 ) {
   try {
-    // Log that we're fetching history
-    console.log(`Fetching history for course ${courseId} for user ${userId}`);
-
-    // Check that we have a courseId
     if (!courseId) {
       return NextResponse.json(
         { error: "Course ID is required" },
@@ -206,7 +185,6 @@ async function getCourseHistory(
       );
     }
 
-    // Initialize vector store with accessToken for RLS
     const vectorStore = await getVectorStore(accessToken);
     if (!vectorStore) {
       console.error("Vector store initialization failed");
@@ -216,13 +194,9 @@ async function getCourseHistory(
       );
     }
 
-    // Log vector store type
-    console.log(`Vector store type: ${vectorStore.constructor.name}`);
-
     let resultRows: MemoryRow[] = [];
     let history: any[] = [];
 
-    // Check if we have a proper vector store or just a Supabase client
     if (vectorStore instanceof SupabaseVectorStore) {
       const supabaseClient = (vectorStore as any).client;
 
@@ -285,7 +259,6 @@ async function getCourseHistory(
         }
       }
 
-      // Method 1: Use the dedicated course_id column
       const { data: columnResultRows, error: columnQueryError } =
         await supabaseClient
           .from("ai_memories")
@@ -329,7 +302,6 @@ async function getCourseHistory(
       });
     }
 
-    // Process the history
     for (const row of resultRows) {
       try {
         if (!row || !row.content) {
@@ -338,11 +310,9 @@ async function getCourseHistory(
         }
 
         const content = row.content;
-        // Each content should be in the format "USER: message\nAI: response"
         const parts = content.split("\nAI: ");
 
         if (parts.length !== 2) {
-          // Skip malformed entries
           console.warn(
             `Skipping malformed content entry: ${content.substring(0, 50)}...`
           );
@@ -352,12 +322,10 @@ async function getCourseHistory(
         const userMessage = parts[0].replace("USER: ", "");
         const aiResponse = parts[1];
 
-        // Get timestamp from metadata or created_at
         const timestamp =
           row.metadata?.timestamp ||
           (row.created_at ? new Date(row.created_at).getTime() : Date.now());
 
-        // Add to history array with longterm status
         history.push({
           userMessage,
           aiResponse,
@@ -366,12 +334,10 @@ async function getCourseHistory(
           metadata: row.metadata,
         });
       } catch (error) {
-        // Skip entries that can't be parsed
         console.error("Error parsing history entry:", error);
       }
     }
 
-    // Return the processed history
     return NextResponse.json({
       history,
       success: true,
@@ -408,7 +374,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get access token from Authorization header
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
@@ -419,10 +384,8 @@ export async function POST(request: Request) {
 
     const accessToken = authHeader.substring(7);
 
-    // Create server client with user context so RLS uses auth.uid()
     const supabase = await createServerClient(accessToken);
 
-    // Set the user session using the access token
     const {
       data: { user },
       error: authError,
@@ -435,7 +398,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify the user ID matches the token
     if (user.id !== userId) {
       return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
     }
@@ -473,7 +435,6 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    // Get the learning path ID and user ID from query params
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const userId = searchParams.get("userId");
@@ -485,7 +446,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Get access token from Authorization header
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
@@ -496,10 +456,8 @@ export async function DELETE(request: Request) {
 
     const accessToken = authHeader.substring(7);
 
-    // Create server client with user context so RLS uses auth.uid()
     const supabase = await createServerClient(accessToken);
 
-    // Validate token user matches provided userId
     const {
       data: { user },
       error: authError,
@@ -516,7 +474,6 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
     }
 
-    // Verify the user owns this course
     const { data: existingCourse, error: fetchError } = await supabase
       .from("courses")
       .select("id")
@@ -531,9 +488,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Handle memory deletion more carefully to preserve long-term memories
-
-    // 1. Delete only the non-long-term memories for this course
     const { error: memoryDeleteError } = await supabase
       .from("ai_memories")
       .delete()
@@ -548,7 +502,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // 2. For long-term memories, just remove the course_id reference
     const { data: longTermMemories, error: longTermCheckError } = await supabase
       .from("ai_memories")
       .select("id")
@@ -579,7 +532,6 @@ export async function DELETE(request: Request) {
       }
     }
 
-    // 3. Now delete the course
     const { error } = await supabase.from("courses").delete().eq("id", id);
 
     if (error) {

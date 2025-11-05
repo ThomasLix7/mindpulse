@@ -316,23 +316,10 @@ async function promoteExistingMemory(
       return true;
     }
 
-    if (memoryData.is_longterm !== (memoryData.metadata?.isLongterm === true)) {
-      console.log(
-        `Memory ${memoryId} has inconsistent long-term flags. Fixing both fields...`
-      );
-      console.log(
-        `Current state: is_longterm=${memoryData.is_longterm}, metadata.isLongterm=${memoryData.metadata?.isLongterm}`
-      );
-    }
-
     const updatedMetadata = {
       ...memoryData.metadata,
       isLongterm: true,
     };
-
-    console.log(
-      `Updating memory ${memoryId} with is_longterm=true and updated metadata`
-    );
 
     const { error: updateError } = await client
       .from("ai_memories")

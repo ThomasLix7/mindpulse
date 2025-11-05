@@ -120,15 +120,12 @@ export function useChat({
 
         buffer += decoder.decode(value, { stream: true });
 
-        // Process SSE format: look for "data: " lines
         let dataIndex = buffer.indexOf("data: ");
         while (dataIndex !== -1) {
-          // Extract everything after "data: "
           const afterData = buffer.slice(dataIndex + 6);
           const endIndex = afterData.indexOf("\n\n");
 
           if (endIndex === -1) {
-            // Need more data, keep the buffer from "data: " onwards
             buffer = buffer.slice(dataIndex);
             break;
           }
@@ -136,21 +133,20 @@ export function useChat({
           const jsonStr = afterData.slice(0, endIndex).trim();
           buffer = buffer.slice(dataIndex + 6 + endIndex + 2);
 
-          try {
-            const data = JSON.parse(jsonStr);
-            if (data.text) {
+            try {
+              const data = JSON.parse(jsonStr);
+              if (data.text) {
               pendingChars += data.text;
 
-              // Batch updates: flush every 15 characters or after 100ms for smoother streaming
               if (pendingChars.length >= 15) {
                 flushPending();
               } else if (!updateTimer) {
                 updateTimer = setTimeout(flushPending, 100);
               }
+              }
+            } catch (e) {
+              console.error("JSON parse error:", e);
             }
-          } catch (e) {
-            console.error("JSON parse error:", e);
-          }
 
           dataIndex = buffer.indexOf("data: ");
         }
@@ -158,7 +154,6 @@ export function useChat({
     } catch (e) {
       console.error("Chat API or stream error:", e);
 
-      // Show an error message in the UI by updating the current course
       setCourses((prev) =>
         prev.map((course) => {
           if (course.id === courseId && course.history.length > 0) {
@@ -179,7 +174,6 @@ export function useChat({
 
   const handleLogout = async () => {
     await signOut();
-    // Reset to a new anonymous session
     createNewCourse();
     router.push("/login");
   };

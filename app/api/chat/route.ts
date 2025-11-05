@@ -229,12 +229,7 @@ export async function POST(req: Request) {
             "Previous relevant conversations:\n" +
             formattedMemories.join("\n\n") +
             "\n\n";
-
-          console.log(
-            `Retrieved ${memories.length} memories for course: ${courseId}`
-          );
         } else {
-          console.log(`No relevant memories found for course: ${courseId}`);
           relevantMemories = "";
         }
 
@@ -280,10 +275,6 @@ export async function POST(req: Request) {
               }
             }
           } catch (error) {
-            console.log(
-              "Raw search response (first 100 chars):",
-              searchResponse.substring(0, 100)
-            );
             searchResults = `Web search results: ${searchResponse.substring(
               0,
               1000
@@ -296,11 +287,6 @@ export async function POST(req: Request) {
           "Note: Unable to search the web. Please check your Serper API key in the environment variables (.env.local file).\n\n";
       }
     } else {
-      console.warn(
-        enableWebSearch
-          ? "Serper API key not found in environment variables"
-          : "Web search disabled by user preference"
-      );
       searchResults = enableWebSearch
         ? "Note: Web search is disabled. To enable it, please add a valid SERPER_API_KEY to your environment variables (.env.local file).\n\n"
         : "Note: Web search is disabled by user preference.\n\n";
@@ -399,7 +385,6 @@ Take charge of the learning - guide, challenge, and advance them through the mat
               const text = chunk.text();
               fullResponse += text;
 
-              // Send chunks directly instead of character-by-character for smoother streaming
               if (text) {
                 controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
               }
@@ -423,6 +408,41 @@ Take charge of the learning - guide, challenge, and advance them through the mat
             } catch (msgErr) {
               console.error("Error inserting special message:", msgErr);
             }
+          }
+
+          try {
+            const { count, error: countError } = await supabase
+              .from("course_messages")
+              .select("*", { count: "exact", head: true })
+              .eq("course_id", courseId)
+              .eq("role", "user");
+
+            if (countError) {
+              console.error(
+                "Error getting message count (special):",
+                countError
+              );
+            }
+
+            const userMessageCount = count || 0;
+            const shouldUpdateSummary =
+              userMessageCount === 1 || userMessageCount % 20 === 0;
+
+            if (shouldUpdateSummary && validatedUserId) {
+              try {
+                await saveCourseSummary(courseId, validatedUserId, accessToken);
+                invalidateMemoriesCache(courseId, validatedUserId);
+              } catch (summaryError) {
+                console.error(
+                  "[Memory Summary] Error in saveCourseSummary (special):",
+                  summaryError
+                );
+              }
+            }
+
+            await updateCourseTimestamp(courseId, accessToken);
+          } catch (error) {
+            console.error("Error saving memory (special):", error);
           }
 
           controller.close();
@@ -497,7 +517,6 @@ ${
             const text = chunk.text();
             fullResponse += text;
 
-            // Send chunks directly instead of character-by-character for smoother streaming
             if (text) {
               controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
             }
@@ -524,18 +543,30 @@ ${
         }
 
         try {
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from("course_messages")
             .select("*", { count: "exact", head: true })
-            .eq("course_id", courseId);
+            .eq("course_id", courseId)
+            .eq("role", "user");
 
-          const messageCount = count || 0;
+          if (countError) {
+            console.error("Error getting message count:", countError);
+          }
+
+          const userMessageCount = count || 0;
           const shouldUpdateSummary =
-            messageCount === 1 || messageCount % 20 === 0;
+            userMessageCount === 1 || userMessageCount % 2 === 0;
 
           if (shouldUpdateSummary && validatedUserId) {
-            await saveCourseSummary(courseId, validatedUserId, accessToken);
-            invalidateMemoriesCache(courseId, validatedUserId);
+            try {
+              await saveCourseSummary(courseId, validatedUserId, accessToken);
+              invalidateMemoriesCache(courseId, validatedUserId);
+            } catch (summaryError) {
+              console.error(
+                "[Memory Summary] Error in saveCourseSummary:",
+                summaryError
+              );
+            }
           }
 
           await updateCourseTimestamp(courseId, accessToken);
