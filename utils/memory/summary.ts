@@ -36,7 +36,6 @@ async function generateCourseSummary(
       previousSummary = existingSummary.content;
     }
 
-    // Get last 30 messages for summarization
     const { data: recentMessages, error: msgError } = await client
       .from("course_messages")
       .select("role, content, created_at")

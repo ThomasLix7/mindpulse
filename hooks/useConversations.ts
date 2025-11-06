@@ -57,7 +57,6 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       setCourses(clientCourses);
 
       if (courseId && clientCourses.some((c: Course) => c.id === courseId)) {
-        // courseId is valid
       } else if (clientCourses.length > 0 && !activeCourseId) {
         setActiveCourseId(clientCourses[0].id);
       }
@@ -89,7 +88,6 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       return;
     }
 
-    // Early return if already processed and loaded
     if (
       processedCoursesRef.current.has(courseId) &&
       activeCourseId === courseId &&
@@ -100,7 +98,6 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
 
     const existingCourse = courses.find((c) => c.id === courseId);
 
-    // If course already loaded with history, just activate it
     if (loadedCourseIds.has(courseId)) {
       if (
         existingCourse &&
@@ -118,13 +115,11 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
       }
     }
 
-    // If course exists but history is empty or undefined, we need to fetch it
     if (
       existingCourse &&
       existingCourse.history &&
       existingCourse.history.length > 0
     ) {
-      // Course already has history loaded
       if (activeCourseId !== courseId) {
         setActiveCourseId(courseId);
       }
@@ -182,8 +177,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
   };
 
   const fetchCoursesFromServer = async (userId: string) => {
-    // This function is now a no-op as data comes from context
-    // Keeping it for backward compatibility
+    // No-op: data comes from context
   };
 
   const createNewCourse = async () => {
@@ -221,14 +215,12 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
 
           setCourses((prev) => [newCourse, ...prev]);
 
-          // Notify sidebar of new course
           window.dispatchEvent(
             new CustomEvent("course-created", {
               detail: newCourse,
             })
           );
 
-          // Navigate to course
           router.push(`/mentor/${data.course.id}`);
 
           return data.course.id;
@@ -364,14 +356,12 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
     }
   }, [historyLoading, authChecked, courses.length, courseId]);
 
-  // Handle "new" course creation
   useEffect(() => {
     if (courseId === "new" && !historyLoading && authChecked) {
       createNewCourse();
     }
   }, [courseId, historyLoading, authChecked]);
 
-  // Load specific course by ID
   const loadSpecificCourse = async (courseId: string, userId?: string) => {
     const checkedEmpty = sessionStorage.getItem(`checked-empty-${courseId}`);
     if (checkedEmpty) {
@@ -400,21 +390,18 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
         ) {
           // Check server for history
         } else {
-          // We have a valid memory course with history, use it
           console.log(`[loadSpecificCourse] Course has history, returning`);
           setHistoryLoading(false);
           return existingCourse;
         }
-      }
+        }
 
-      // For authenticated users, fetch from server
       if (user?.id) {
         try {
           console.log(
             `[loadSpecificCourse] Fetching from API: /api/courses?userId=${user.id}&courseId=${courseId}`
           );
 
-          // Get user's access token
           const {
             data: { session },
           } = await supabase.auth.getSession();
@@ -459,16 +446,13 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
               history: formattedHistory,
             } as any;
 
-            // Update courses in memory
             setCourses((prevCourses) => {
-              // Avoid duplicates
               const filtered = prevCourses.filter((c) => c.id !== courseId);
               return [...filtered, formattedCourse];
             });
 
             setHistoryLoading(false);
 
-            // Mark as empty if needed for future reference
             if (
               !formattedCourse.history ||
               formattedCourse.history.length === 0

@@ -43,7 +43,6 @@ export function useColorMode(): UseColorModeReturn {
 
   React.useEffect(() => {
     if (mounted) {
-      // Ensure HTML class is updated
       document.documentElement.className = resolvedTheme || "light";
     }
   }, [resolvedTheme, mounted]);

@@ -149,16 +149,16 @@ graph TB
     C3 --> D2
     C2 --> D2
 
-    style A fill:#e3f2fd
-    style B1 fill:#f5f5f5
-    style B2 fill:#f5f5f5
-    style B3 fill:#f5f5f5
-    style B4 fill:#f5f5f5
-    style C1 fill:#fce4ec
-    style C2 fill:#fce4ec
-    style C3 fill:#fce4ec
-    style D1 fill:#e8f5e9
-    style D2 fill:#e8f5e9
+    style A fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
+    style B1 fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
+    style B2 fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
+    style B3 fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
+    style B4 fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
+    style C1 fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
+    style C2 fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
+    style C3 fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
+    style D1 fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style D2 fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
 ```
 
 ## 🛠️ Tech Stack

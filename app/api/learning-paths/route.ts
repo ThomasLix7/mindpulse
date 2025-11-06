@@ -433,7 +433,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User ID mismatch" }, { status: 403 });
     }
 
-    // Phase 2: Generate curriculum with confirmed skills
     if (confirmedSkills && learningPathId) {
       if (!title || !goal) {
         return NextResponse.json(
@@ -505,7 +504,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Phase 1: Analyze required skills and match with user's existing skills
     if (!title || !goal) {
       return NextResponse.json(
         { error: "Title and goal are required" },
@@ -551,7 +549,6 @@ export async function POST(request: Request) {
         level: level || "medium",
       });
 
-      // Match required skills with user's existing skills
       const skillMatches = requiredSkills.map((skillName: string) => {
         const normalizedSkill = skillName.toLowerCase().trim();
         const matched = existingSkills.find((existing) => {

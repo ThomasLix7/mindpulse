@@ -24,13 +24,11 @@ export default function ChatDefaultPage() {
   } | null>(null);
   const router = useRouter();
 
-  // Check authentication status
   useEffect(() => {
     const checkAuth = async () => {
       const { user: currentUser } = await getCurrentUser();
       setUser(currentUser);
 
-      // Redirect to login if not authenticated
       if (!currentUser?.id) {
         router.push("/login");
         return;
@@ -41,8 +39,6 @@ export default function ChatDefaultPage() {
 
     checkAuth();
   }, [router]);
-
-  // Phase 1: Create learning path and analyze required skills
   const handleCreateLearningPath = async (formData: LearningPathFormData) => {
     if (!user?.id) {
       console.error("User not authenticated");
@@ -65,7 +61,6 @@ export default function ChatDefaultPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.learningPath) {
-          // Phase 1: Skill assessment phase
           if (data.phase === "skill_assessment" && data.requiredSkills) {
             setSkillAssessment({
               learningPath: data.learningPath,
@@ -74,7 +69,6 @@ export default function ChatDefaultPage() {
             setShowSkillConfirmation(true);
             setIsCreating(false);
           } else {
-            // Direct curriculum generation (fallback)
             window.dispatchEvent(
               new CustomEvent("learning-path-created", {
                 detail: data.learningPath,
@@ -97,7 +91,6 @@ export default function ChatDefaultPage() {
     }
   };
 
-  // Phase 2: Generate curriculum with confirmed skills
   const handleConfirmSkills = async (
     confirmedSkills: Array<{
       skill_name: string;

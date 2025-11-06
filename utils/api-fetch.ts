@@ -24,7 +24,6 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
     return fetch(input, { ...init, headers });
   } catch (error) {
     console.error("Error in apiFetch:", error);
-    // Return fetch without auth header if there's an error
     const headers = {
       "Content-Type": "application/json",
       ...(init.headers || {}),

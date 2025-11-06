@@ -30,8 +30,6 @@ export default async function handler(
 
   try {
     const result = await model.generateContentStream(prompt);
-
-    // Set headers for streaming
     res.setHeader("Content-Type", "text/event-stream;charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");

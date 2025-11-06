@@ -32,12 +32,10 @@ function ChatLayoutInner({ children }: { children: React.ReactNode }) {
     loadUser();
   }, []);
 
-  // Handle learning path deletion
   const deleteLearningPath = async (id: string) => {
     const currentPathId = pathname.split("/").pop();
     const isOnPathRoute = id === currentPathId;
 
-    // Check if user is on a course route that belongs to this learning path
     let isOnCourseRoute = false;
     if (currentPathId && !isOnPathRoute && courses.length > 0) {
       const currentCourse = courses.find((c: any) => c.id === currentPathId);
@@ -62,7 +60,6 @@ function ChatLayoutInner({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Redirect if user is on the deleted learning path or one of its courses
     if (isOnPathRoute || isOnCourseRoute) {
       const remainingPaths = currentPaths.filter((path) => path.id !== id);
       if (remainingPaths.length > 0) {

@@ -34,7 +34,6 @@ export default function ChatPage() {
         return;
       }
 
-      // Check if it's a course
       const course = courses?.find((c: any) => c.id === id);
       if (course) {
         setCourseId(id);
@@ -42,15 +41,12 @@ export default function ChatPage() {
         return;
       }
 
-      // Check if it's a learning path
       const learningPath = learningPaths?.find((lp: any) => lp.id === id);
       if (learningPath) {
         setLearningPathId(id);
         setIsLoading(false);
         return;
       }
-
-      // Neither found, redirect to home
       router.push("/mentor");
     };
 

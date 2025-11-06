@@ -32,7 +32,6 @@ export default function LongTermMemories() {
   const [forgettingMemory, setForgettingMemory] = useState<string | null>(null);
   const router = useRouter();
 
-  // Check authentication on load
   useEffect(() => {
     const checkAuth = async () => {
       const { user, error } = await getCurrentUser();
@@ -40,15 +39,12 @@ export default function LongTermMemories() {
       setLoading(false);
 
       if (user) {
-        // Load memories immediately on first load
         loadMemories("all memories");
       }
     };
 
     checkAuth();
   }, []);
-
-  // Function to load memories
   const loadMemories = async (query = searchQuery) => {
     if (!user?.id) {
       setError("You must be logged in to view long-term memories");
@@ -91,7 +87,6 @@ export default function LongTermMemories() {
     }
   };
 
-  // Function to forget a memory
   const forgetMemory = async (memoryId: string) => {
     if (!user?.id || !memoryId) {
       setError("Unable to forget memory: missing user ID or memory ID");
@@ -119,7 +114,6 @@ export default function LongTermMemories() {
       const data = await response.json();
 
       if (data.success) {
-        // Remove the forgotten memory from the UI
         setMemories(memories.filter((memory) => memory.id !== memoryId));
       } else {
         setError(data.error || "Failed to forget memory");
@@ -132,19 +126,16 @@ export default function LongTermMemories() {
     }
   };
 
-  // Handle search form submission
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     loadMemories();
   };
 
-  // Load all memories
   const handleLoadAll = () => {
     setSearchQuery("");
     loadMemories("all memories");
   };
 
-  // Format date from timestamp
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString();
   };

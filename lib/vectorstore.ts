@@ -205,7 +205,6 @@ export async function getVectorStore(accessToken?: string) {
           console.error("Standard insert approach failed:", error);
         }
 
-        // If we get here, try a simplified approach with no embeddings
         try {
           console.log("Trying simplified insert (no embeddings)...");
           const simplifiedIds = [];
@@ -214,8 +213,6 @@ export async function getVectorStore(accessToken?: string) {
             try {
               const doc = documents[i];
               const id = ids[i];
-
-              // Try inserting with absolute minimal fields
               const { error } = await client.from("ai_memories").insert({
                 id,
                 content: doc.pageContent,
@@ -378,7 +375,6 @@ export async function getVectorStore(accessToken?: string) {
         }
       }
 
-      // Fallback: text-based search with filters
       try {
         let queryBuilder = client
           .from("ai_memories")

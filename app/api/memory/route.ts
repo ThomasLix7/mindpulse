@@ -210,7 +210,6 @@ export async function GET(request: Request) {
 
       console.log(`Vector search found ${memories.length} long-term memories`);
 
-      // If vector search didn't find anything, try a direct database query as fallback
       if (memories.length === 0) {
         console.log(
           "Vector search found no results, falling back to direct query"
@@ -391,7 +390,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // We need either a memoryId OR (userMessage AND aiResponse)
+    // Requires: memoryId OR (userMessage AND aiResponse)
     if (!memoryId && (!userMessage || !aiResponse)) {
       return NextResponse.json(
         {

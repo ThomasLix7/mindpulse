@@ -75,8 +75,7 @@ export function useMemory({
         return;
       }
 
-      // Use the memory endpoint to forget it, passing params as URL query params
-      // Important: Use URL parameters for DELETE instead of body
+      // Use URL parameters for DELETE (not body)
       const deleteUrl = `/api/memory?userId=${encodeURIComponent(
         user.id
       )}&memoryId=${encodeURIComponent(findData.memoryId)}`;
@@ -209,7 +208,6 @@ export function useMemory({
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          // Only show alert if not an active course to avoid disrupting the chat flow
           const isActiveCourse = courses.some(
             (c) => c.id === courseId
           );
@@ -217,7 +215,6 @@ export function useMemory({
             alert("Successfully saved to long-term memory!");
           }
 
-          // Update local state to reflect the change
           setCourses((prev) =>
             prev.map((course) => {
               if (course.id === courseId) {
@@ -239,11 +236,10 @@ export function useMemory({
             }`
           );
         }
-      } else {
-        try {
-          const errorData = await response.json();
-          // Handle the case where errorData might be empty
-          if (errorData && Object.keys(errorData).length > 0) {
+        } else {
+          try {
+            const errorData = await response.json();
+            if (errorData && Object.keys(errorData).length > 0) {
             alert(
               `Failed to save: ${errorData.error || "Unknown error"}${
                 errorData.details ? ` - ${errorData.details}` : ""

@@ -20,7 +20,6 @@ export default function SignUpForm() {
     setError(null);
     setMessage(null);
 
-    // Validate passwords match
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       setLoading(false);
@@ -38,7 +37,6 @@ export default function SignUpForm() {
         "Registration successful! Please check your email for verification."
       );
 
-      // Automatically redirect to login after a short delay
       setTimeout(() => {
         router.push("/login");
       }, 3000);

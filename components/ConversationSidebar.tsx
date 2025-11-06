@@ -165,15 +165,12 @@ export default function CourseSidebar({
 
     if (!userId) return;
 
-    // Navigate directly - history will be loaded when needed
     router.push(`/mentor/${course.id}`);
   };
 
   const confirmStartCourse = () => {
     if (!confirmCourse) return;
 
-    // Just navigate - the course already exists
-    // Conversation (messages) will be created when user sends first message
     router.push(`/mentor/${confirmCourse.id}`);
     setConfirmCourse(null);
   };
@@ -230,7 +227,6 @@ export default function CourseSidebar({
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.learningPath) {
-          // Phase 1: Skill assessment phase
           if (data.phase === "skill_assessment" && data.requiredSkills) {
             setSkillAssessment({
               learningPath: data.learningPath,
@@ -239,7 +235,6 @@ export default function CourseSidebar({
             setShowSkillConfirmation(true);
             setIsFormOpen(false);
           } else {
-            // Direct curriculum generation (fallback)
             window.dispatchEvent(
               new CustomEvent("learning-path-created", {
                 detail: data.learningPath,
@@ -257,7 +252,6 @@ export default function CourseSidebar({
     }
   };
 
-  // Phase 2: Generate curriculum with confirmed skills
   const handleConfirmSkills = async (
     confirmedSkills: Array<{
       skill_name: string;

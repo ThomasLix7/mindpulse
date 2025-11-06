@@ -24,7 +24,6 @@ export function NavBar() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
 
-  // Function to check authentication status
   const checkAuth = async () => {
     try {
       const { user, error } = await getCurrentUser();
@@ -40,11 +39,9 @@ export function NavBar() {
     }
   };
 
-  // Check authentication status on component mount
   useEffect(() => {
     checkAuth();
 
-    // Listen for auth state changes
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         checkAuth();
@@ -53,27 +50,22 @@ export function NavBar() {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // Subscribe to auth state changes using Supabase's auth listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // Update user state based on session
         setUser(session?.user || null);
       }
     );
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      // Clean up auth listener
       if (authListener && authListener.subscription) {
         authListener.subscription.unsubscribe();
       }
     };
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // Only close if menu is open and click is outside both the button and menu
       if (
         isUserMenuOpen &&
         menuRef.current &&
@@ -116,11 +108,8 @@ export function NavBar() {
     }
   };
 
-  // Function to get user's display name (use username or fallback to email)
   const getUserDisplayName = () => {
     if (!user) return "";
-
-    // Extract username from email or use the first part of email
     const username =
       user.user_metadata?.name ||
       user.user_metadata?.username ||
