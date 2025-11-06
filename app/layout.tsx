@@ -6,8 +6,8 @@ import { NavBar } from "@/components/NavBar";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "MindPulse",
-  description: "A conversational AI with memory",
+  title: "Tutor360",
+  description: "AI-powered learning platform with personalized mentorship",
 };
 
 export default function RootLayout({

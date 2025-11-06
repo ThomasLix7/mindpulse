@@ -144,7 +144,7 @@ export function NavBar() {
         <Flex alignItems="center">
           <Link href="/" passHref>
             <Heading as="h1" size="md" cursor="pointer">
-              MindPulse
+              Tutor360
             </Heading>
           </Link>
 

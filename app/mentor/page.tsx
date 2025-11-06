@@ -180,7 +180,7 @@ export default function ChatDefaultPage() {
               color={colorMode === "dark" ? "white" : "black"}
               textAlign="center"
             >
-              Welcome to MindPulse
+              Welcome to Tutor360
             </Heading>
 
             <Text
