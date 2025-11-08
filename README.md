@@ -131,8 +131,7 @@ graph TB
     end
 
     subgraph "Data Layer"
-        D1[(Supabase<br/>PostgreSQL)]
-        D2[(Vector Store<br/>Embeddings)]
+        D1[(Supabase<br/>PostgreSQL + pgvector)]
     end
 
     A --> B1
@@ -150,8 +149,7 @@ graph TB
 
     C1 --> D1
     C2 --> D1
-    C3 --> D2
-    C2 --> D2
+    C3 --> D1
 
     style A fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
     style B1 fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
@@ -162,7 +160,6 @@ graph TB
     style C2 fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
     style C3 fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
     style D1 fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
-    style D2 fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
 ```
 
 ## 🛠️ Tech Stack
