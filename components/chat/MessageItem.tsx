@@ -23,107 +23,213 @@ export function MessageItem({ message }: MessageItemProps) {
 
   const aiMarkdownComponents = useMemo(
     () => ({
-      code({ node, inline, className, children, ...props }: any) {
+      p: ({ children }: any) => (
+        <Text as="p" mb={4} lineHeight="1.8" fontSize="lg">
+          {children}
+        </Text>
+      ),
+      h1: ({ children }: any) => (
+        <Text as="h1" fontSize="3xl" fontWeight="bold" mb={4} mt={6}>
+          {children}
+        </Text>
+      ),
+      h2: ({ children }: any) => (
+        <Text as="h2" fontSize="2xl" fontWeight="bold" mb={3} mt={5}>
+          {children}
+        </Text>
+      ),
+      h3: ({ children }: any) => (
+        <Text as="h3" fontSize="xl" fontWeight="semibold" mb={3} mt={4}>
+          {children}
+        </Text>
+      ),
+      ul: ({ children }: any) => (
+        <Box as="ul" pl={6} mb={4}>
+          {children}
+        </Box>
+      ),
+      ol: ({ children }: any) => (
+        <Box as="ol" pl={6} mb={4}>
+          {children}
+        </Box>
+      ),
+      li: ({ children }: any) => {
+        const getTextContent = (node: any): string => {
+          if (typeof node === "string") return node;
+          if (typeof node === "number") return String(node);
+          if (Array.isArray(node)) return node.map(getTextContent).join("");
+          if (node?.props?.children) return getTextContent(node.props.children);
+          return "";
+        };
+
+        const text = getTextContent(children);
+
+        const itemMatch = text.match(/^(Item\s+\d+)\s*(\([^)]+\))?\s*:/);
+        if (itemMatch) {
+          const itemNumber = itemMatch[1];
+          const errorType = itemMatch[2] || "";
+          const description = text.replace(
+            /^Item\s+\d+\s*(\([^)]+\))?\s*:\s*/,
+            ""
+          );
+
+          return (
+            <Box as="li" mb={4} lineHeight="1.8">
+              <Flex align="start" gap={2} mb={2} flexWrap="wrap">
+                <Box
+                  px={3}
+                  py={1}
+                  borderRadius="md"
+                  bg={
+                    colorMode === "dark"
+                      ? "rgba(37, 99, 235, 0.3)"
+                      : "rgba(37, 99, 235, 0.15)"
+                  }
+                  color={colorMode === "dark" ? "blue.300" : "blue.700"}
+                  fontSize="sm"
+                  fontWeight="bold"
+                >
+                  {itemNumber}
+                </Box>
+                {errorType && (
+                  <Box
+                    px={3}
+                    py={1}
+                    borderRadius="md"
+                    bg={
+                      colorMode === "dark"
+                        ? "rgba(239, 68, 68, 0.2)"
+                        : "rgba(239, 68, 68, 0.12)"
+                    }
+                    color={colorMode === "dark" ? "red.400" : "red.600"}
+                    fontSize="sm"
+                    fontWeight="semibold"
+                  >
+                    {errorType}
+                  </Box>
+                )}
+              </Flex>
+              <Text fontSize="lg" lineHeight="1.8" pl={2}>
+                {description}
+              </Text>
+            </Box>
+          );
+        }
+
+        const sectionHeaderMatch = text.match(/^([^:]+):\s*$/);
+        if (sectionHeaderMatch) {
+          return (
+            <Box as="li" mb={3} mt={4}>
+              <Text
+                fontSize="xl"
+                fontWeight="bold"
+                color={colorMode === "dark" ? "white" : "inherit"}
+                mb={2}
+              >
+                {text}
+              </Text>
+            </Box>
+          );
+        }
+
+        const subItemMatch = text.match(/^([^:]+):\s*(.+)$/);
+        if (subItemMatch) {
+          const label = subItemMatch[1].trim();
+          const description = subItemMatch[2].trim();
+
+          return (
+            <Box as="li" mb={3} lineHeight="1.8">
+              <Flex align="start" gap={2} mb={1}>
+                <Box
+                  px={3}
+                  py={1}
+                  borderRadius="md"
+                  bg={
+                    colorMode === "dark"
+                      ? "rgba(16, 185, 129, 0.15)"
+                      : "rgba(16, 185, 129, 0.08)"
+                  }
+                  color={colorMode === "dark" ? "green.400" : "green.600"}
+                  fontSize="sm"
+                  fontWeight="semibold"
+                >
+                  {label}:
+                </Box>
+              </Flex>
+              <Text fontSize="lg" lineHeight="1.8" pl={2}>
+                {description}
+              </Text>
+            </Box>
+          );
+        }
+
+        return (
+          <Text as="li" mb={2} lineHeight="1.8" fontSize="lg">
+            {children}
+          </Text>
+        );
+      },
+      code: ({ inline, children, className }: any) => {
         const match = /language-(\w+)/.exec(className || "");
         const language = match ? match[1] : "";
-        return !inline && match ? (
-          <Box mt={2} mb={2} borderRadius="md" overflow="hidden">
-            <SyntaxHighlighter
-              style={colorMode === "dark" ? vscDarkPlus : okaidia}
-              language={language}
-              PreTag="div"
-              customStyle={{
-                margin: 0,
-                borderRadius: "0.5rem",
-              }}
-              {...props}
-            >
-              {String(children).replace(/\n$/, "")}
-            </SyntaxHighlighter>
-          </Box>
-        ) : (
+        const codeString = String(children).replace(/\n$/, "");
+
+        if (!inline && language) {
+          return (
+            <Box my={4}>
+              <SyntaxHighlighter
+                style={colorMode === "dark" ? vscDarkPlus : okaidia}
+                language={language}
+                PreTag="div"
+              >
+                {codeString}
+              </SyntaxHighlighter>
+            </Box>
+          );
+        }
+
+        return (
           <Text
             as="code"
-            bg={
-              colorMode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"
-            }
-            px="0.25em"
-            py="0.1em"
-            borderRadius="0.25em"
-            fontSize="0.9em"
-            fontFamily="mono"
+            px={2}
+            py={1}
+            borderRadius="md"
+            fontSize="md"
+            bg={colorMode === "dark" ? "gray.700" : "gray.100"}
+            color={colorMode === "dark" ? "gray.100" : "gray.800"}
           >
             {children}
           </Text>
         );
       },
-      p: ({ children }: any) => (
-        <Text mb={2} lineHeight="1.6">
-          {children}
-        </Text>
-      ),
-      ul: ({ children }: any) => (
-        <Box as="ul" mb={2} pl={4}>
-          {children}
-        </Box>
-      ),
-      ol: ({ children }: any) => (
-        <Box as="ol" mb={2} pl={4}>
-          {children}
-        </Box>
-      ),
-      li: ({ children }: any) => (
-        <Text as="li" mb={1}>
-          {children}
-        </Text>
-      ),
-      h1: ({ children }: any) => (
-        <Text as="h1" fontSize="xl" fontWeight="bold" mb={2} mt={2}>
-          {children}
-        </Text>
-      ),
-      h2: ({ children }: any) => (
-        <Text as="h2" fontSize="lg" fontWeight="bold" mb={2} mt={2}>
-          {children}
-        </Text>
-      ),
-      h3: ({ children }: any) => (
-        <Text as="h3" fontSize="md" fontWeight="bold" mb={2} mt={2}>
-          {children}
-        </Text>
-      ),
+      pre: ({ children }: any) => <Box as="pre">{children}</Box>,
       blockquote: ({ children }: any) => (
         <Box
           as="blockquote"
-          borderLeft="3px solid"
-          borderColor={colorMode === "dark" ? "gray.600" : "gray.300"}
-          pl={3}
-          my={2}
+          pl={4}
+          borderLeft="4px solid"
+          borderColor="gray.300"
+          my={4}
           fontStyle="italic"
+          fontSize="lg"
         >
           {children}
         </Box>
       ),
-      a: ({ children, href }: any) => (
-        <Link
-          href={href}
-          color={colorMode === "dark" ? "blue.400" : "blue.600"}
-          textDecoration="underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {children}
-        </Link>
-      ),
       strong: ({ children }: any) => (
-        <Text as="span" fontWeight="bold">
+        <Text as="strong" fontWeight="bold">
           {children}
         </Text>
       ),
       em: ({ children }: any) => (
-        <Text as="span" fontStyle="italic">
+        <Text as="em" fontStyle="italic">
           {children}
         </Text>
+      ),
+      a: ({ href, children }: any) => (
+        <Link href={href} color="blue.500" textDecoration="underline">
+          {children}
+        </Link>
       ),
       br: () => <Box as="br" />,
     }),
@@ -154,13 +260,30 @@ export function MessageItem({ message }: MessageItemProps) {
 
       {aiText && (
         <Flex justifyContent="flex-start" mb={3}>
-          <Box maxW="70%" p={3}>
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkBreaks]}
-              components={aiMarkdownComponents}
-            >
-              {aiText}
-            </ReactMarkdown>
+          <Box
+            maxW="70%"
+            p={6}
+            bg={
+              colorMode === "dark"
+                ? "rgba(37, 99, 235, 0.15)"
+                : "rgba(37, 99, 235, 0.08)"
+            }
+            borderRadius="md"
+            borderWidth="1px"
+            borderColor={
+              colorMode === "dark"
+                ? "rgba(37, 99, 235, 0.3)"
+                : "rgba(37, 99, 235, 0.2)"
+            }
+          >
+            <Box lineHeight="1.8" fontSize="lg">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkBreaks]}
+                components={aiMarkdownComponents}
+              >
+                {aiText}
+              </ReactMarkdown>
+            </Box>
           </Box>
         </Flex>
       )}
