@@ -21,11 +21,18 @@ export function ChatInput({
 }: ChatInputProps) {
   const { colorMode } = useColorMode();
   const rafRef = useRef<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [localInput, setLocalInput] = useState(input);
 
   useEffect(() => {
     setLocalInput(input);
   }, [input]);
+
+  useEffect(() => {
+    if (!loading && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [loading]);
 
   const adjustHeight = useCallback((target: HTMLTextAreaElement) => {
     if (rafRef.current) {
@@ -52,6 +59,9 @@ export function ChatInput({
       setInput(trimmed);
       onSubmit(e, trimmed);
       setLocalInput("");
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
     },
     [localInput, loading, setInput, onSubmit]
   );
@@ -72,6 +82,7 @@ export function ChatInput({
     >
       <form onSubmit={handleSubmit}>
         <Textarea
+          ref={textareaRef}
           value={localInput}
           onChange={(e) => {
             setLocalInput(e.target.value);
