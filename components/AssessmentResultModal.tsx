@@ -195,8 +195,12 @@ export function AssessmentResultModal({
                   px={3}
                   py={1}
                   borderRadius="md"
-                  bg={colorMode === "dark" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.08)"}
-                  color={colorMode === "dark" ? "green.400" : "green.600"}
+                  bg={
+                    colorMode === "dark"
+                      ? "rgba(147, 51, 234, 0.2)"
+                      : "rgba(147, 51, 234, 0.12)"
+                  }
+                  color={colorMode === "dark" ? "purple.400" : "purple.600"}
                   fontSize="sm"
                   fontWeight="semibold"
                 >

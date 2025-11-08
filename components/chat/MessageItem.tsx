@@ -146,10 +146,10 @@ export function MessageItem({ message }: MessageItemProps) {
                   borderRadius="md"
                   bg={
                     colorMode === "dark"
-                      ? "rgba(16, 185, 129, 0.15)"
-                      : "rgba(16, 185, 129, 0.08)"
+                      ? "rgba(147, 51, 234, 0.2)"
+                      : "rgba(147, 51, 234, 0.12)"
                   }
-                  color={colorMode === "dark" ? "green.400" : "green.600"}
+                  color={colorMode === "dark" ? "purple.400" : "purple.600"}
                   fontSize="sm"
                   fontWeight="semibold"
                 >
