@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { Box, Button, Flex } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
 
@@ -9,6 +9,8 @@ import { useChat } from "@/hooks/useChat";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { AssessmentModal } from "@/components/AssessmentModal";
+import { AssessmentResultModal } from "@/components/AssessmentResultModal";
 import { ChatProps } from "@/types/chat";
 import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
@@ -24,6 +26,28 @@ export default function ChatRefactored({
     courseId
   );
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [assessmentModalOpen, setAssessmentModalOpen] = useState(false);
+  const [currentAssessmentId, setCurrentAssessmentId] = useState<string | null>(
+    null
+  );
+  const [assessmentReadyTopic, setAssessmentReadyTopic] = useState<
+    string | null
+  >(null);
+  const [generatingAssessment, setGeneratingAssessment] = useState(false);
+  const [inProgressAssessmentId, setInProgressAssessmentId] = useState<
+    string | null
+  >(null);
+  const [inProgressAssessmentTopic, setInProgressAssessmentTopic] = useState<
+    string | null
+  >(null);
+  const [resultModalOpen, setResultModalOpen] = useState(false);
+  const [assessmentResults, setAssessmentResults] = useState<any>(null);
+  const [resultAssessmentId, setResultAssessmentId] = useState<string | null>(
+    null
+  );
+  const [completedAssessmentId, setCompletedAssessmentId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     const initUser = async () => {
@@ -43,6 +67,172 @@ export default function ChatRefactored({
     getActiveCourse,
     createNewCourse,
   } = useCourses(resolvedCourseId, isHomePage);
+
+  // Assessment events
+  useEffect(() => {
+    const handleAssessmentReadySignal = (event: CustomEvent) => {
+      const { topic } = event.detail;
+      setAssessmentReadyTopic(topic);
+
+      if (activeCourseId) {
+        setCourses((prev) =>
+          prev.map((course) => {
+            if (course.id === activeCourseId) {
+              return {
+                ...course,
+                metadata: {
+                  ...(course as any).metadata,
+                  pending_assessment_topic: topic,
+                },
+              };
+            }
+            return course;
+          })
+        );
+      }
+    };
+
+    const handleAssessmentReady = (event: CustomEvent) => {
+      const { assessmentId } = event.detail;
+      setCurrentAssessmentId(assessmentId);
+      setAssessmentModalOpen(true);
+      setAssessmentReadyTopic(null);
+    };
+
+    window.addEventListener(
+      "assessmentReadySignal",
+      handleAssessmentReadySignal as EventListener
+    );
+    window.addEventListener(
+      "assessmentReady",
+      handleAssessmentReady as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "assessmentReadySignal",
+        handleAssessmentReadySignal as EventListener
+      );
+      window.removeEventListener(
+        "assessmentReady",
+        handleAssessmentReady as EventListener
+      );
+    };
+  }, [activeCourseId, setCourses]);
+
+  const handleStartAssessment = async () => {
+    if (!activeCourseId || !user?.id || !assessmentReadyTopic) return;
+
+    const activeCourse = getActiveCourse();
+    const courseData = courses.find((c: any) => c.id === activeCourseId) as any;
+    const lessonIndex = courseData?.current_lesson_index ?? 0;
+    const topicIndex = courseData?.current_topic_index ?? 0;
+    const lessons = courseData?.curriculum?.lessons || [];
+    const currentLesson = lessons[lessonIndex];
+
+    setGeneratingAssessment(true);
+    setCurrentAssessmentId("generating");
+    setAssessmentModalOpen(true);
+    try {
+      const response = await apiFetch("/api/assessments/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          courseId: activeCourseId,
+          userId: user.id,
+          topic: assessmentReadyTopic,
+          lessonTitle: currentLesson?.title || activeCourse.title,
+          lessonIndex,
+          topicIndex,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentAssessmentId(data.assessmentId);
+        setInProgressAssessmentId(data.assessmentId);
+        setInProgressAssessmentTopic(assessmentReadyTopic);
+        setAssessmentModalOpen(true);
+        setAssessmentReadyTopic(null);
+
+        setCourses((prev) =>
+          prev.map((course) => {
+            if (course.id === activeCourseId) {
+              const metadata = (course as any).metadata || {};
+              const {
+                pending_assessment_topic,
+                pending_assessment_lesson_index,
+                pending_assessment_topic_index,
+                ...cleanedMetadata
+              } = metadata;
+              return {
+                ...course,
+                metadata: {
+                  ...cleanedMetadata,
+                  in_progress_assessment_id: data.assessmentId,
+                  in_progress_assessment_topic: assessmentReadyTopic,
+                },
+              };
+            }
+            return course;
+          })
+        );
+      } else {
+        const errorData = await response.json();
+        if (response.status === 409 && errorData.existingAssessmentId) {
+          setCurrentAssessmentId(errorData.existingAssessmentId);
+          setInProgressAssessmentId(errorData.existingAssessmentId);
+          setInProgressAssessmentTopic(assessmentReadyTopic);
+          setAssessmentModalOpen(true);
+          setAssessmentReadyTopic(null);
+        } else {
+          console.error("Failed to generate assessment:", errorData.error);
+        }
+      }
+    } catch (error) {
+      console.error("Error generating assessment:", error);
+    } finally {
+      setGeneratingAssessment(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeCourseId || !courses.length || !user?.id || !authChecked) return;
+
+    const checkAssessments = async () => {
+      const activeCourse = courses.find(
+        (c: any) => c.id === activeCourseId
+      ) as any;
+
+      if (!activeCourse) return;
+
+      const inProgressId = activeCourse?.metadata?.in_progress_assessment_id;
+      const inProgressTopic =
+        activeCourse?.metadata?.in_progress_assessment_topic;
+
+      if (inProgressId) {
+        setCurrentAssessmentId(inProgressId);
+        setInProgressAssessmentId(inProgressId);
+        setInProgressAssessmentTopic(inProgressTopic || null);
+        setAssessmentReadyTopic(null);
+      } else if (
+        activeCourse.metadata !== undefined &&
+        activeCourse.metadata !== null
+      ) {
+        setInProgressAssessmentId(null);
+        setInProgressAssessmentTopic(null);
+      }
+
+      if (!inProgressId && activeCourse?.metadata?.pending_assessment_topic) {
+        setAssessmentReadyTopic(activeCourse.metadata.pending_assessment_topic);
+      }
+
+      const completedId = activeCourse?.metadata?.completed_assessment_id;
+      if (completedId) {
+        setCompletedAssessmentId(completedId);
+      }
+    };
+
+    checkAssessments();
+  }, [activeCourseId, courses, user?.id, authChecked]);
 
   const greetingCheckedRef = useRef<Set<string>>(new Set());
   const isSendingRef = useRef(false);
@@ -210,6 +400,12 @@ export default function ChatRefactored({
       return;
     }
 
+    // Don't send continue message if there's an in-progress assessment
+    // (assessment result message will be sent instead)
+    if (inProgressAssessmentId || currentAssessmentId) {
+      return;
+    }
+
     const hasHistory = activeCourse.history && activeCourse.history.length > 0;
     greetingCheckedRef.current.add(activeCourseId);
     isSendingRef.current = true;
@@ -328,6 +524,16 @@ export default function ChatRefactored({
                   updateTimer = setTimeout(flushPending, 100);
                 }
               }
+
+              if (data.type === "assessment_ready_signal" && data.topic) {
+                setAssessmentReadyTopic(data.topic);
+              }
+
+              if (data.type === "assessment_ready" && data.assessmentId) {
+                setCurrentAssessmentId(data.assessmentId);
+                setAssessmentModalOpen(true);
+                setGeneratingAssessment(false);
+              }
             } catch (e) {
               console.error("JSON parse error:", e);
             }
@@ -429,6 +635,117 @@ export default function ChatRefactored({
         </Box>
       </Box>
 
+      {assessmentReadyTopic && (
+        <Box
+          p={4}
+          borderTop="1px solid"
+          borderColor={colorMode === "dark" ? "gray.700" : "gray.200"}
+          bg={colorMode === "dark" ? "gray.800" : "blue.50"}
+          textAlign="center"
+        >
+          <Text mb={2} fontWeight="medium">
+            Ready for assessment on: {assessmentReadyTopic}
+          </Text>
+          <Button
+            colorScheme="blue"
+            onClick={handleStartAssessment}
+            isLoading={generatingAssessment}
+            size="sm"
+          >
+            Start Assessment
+          </Button>
+        </Box>
+      )}
+
+      {inProgressAssessmentId && !assessmentModalOpen && (
+        <Box
+          p={4}
+          borderTop="1px solid"
+          borderColor={colorMode === "dark" ? "gray.700" : "gray.200"}
+          bg={colorMode === "dark" ? "gray.800" : "yellow.50"}
+          textAlign="center"
+        >
+          <Text mb={2} fontWeight="medium">
+            {inProgressAssessmentTopic
+              ? `Please complete assessment: ${inProgressAssessmentTopic}`
+              : "Please complete assessment"}
+          </Text>
+          <Button
+            colorScheme="blue"
+            onClick={() => {
+              setCurrentAssessmentId(inProgressAssessmentId);
+              setAssessmentModalOpen(true);
+            }}
+            size="sm"
+          >
+            Resume Assessment
+          </Button>
+        </Box>
+      )}
+
+      {completedAssessmentId && !resultModalOpen && !inProgressAssessmentId && (
+        <Box
+          p={4}
+          borderTop="1px solid"
+          borderColor={colorMode === "dark" ? "gray.700" : "gray.200"}
+          bg={colorMode === "dark" ? "gray.800" : "green.50"}
+          textAlign="center"
+        >
+          <Text mb={2} fontWeight="medium">
+            Assessment completed. Please review your results.
+          </Text>
+          <Button
+            colorScheme="green"
+            onClick={async () => {
+              try {
+                if (
+                  resultAssessmentId === completedAssessmentId &&
+                  assessmentResults
+                ) {
+                  setResultModalOpen(true);
+                } else {
+                  const response = await apiFetch(
+                    `/api/assessments/${completedAssessmentId}`
+                  );
+                  if (!response.ok) {
+                    throw new Error("Failed to fetch assessment");
+                  }
+                  const data = await response.json();
+
+                  const assessment = data.assessment;
+                  const items = data.items || [];
+                  const correctCount = items.filter(
+                    (item: any) => item.is_correct
+                  ).length;
+                  const totalItems = items.length;
+                  const score = assessment.overall_score || 0;
+                  const allPassed = score >= 80;
+                  const failedConcepts =
+                    assessment.metadata?.failed_concepts || [];
+
+                  const results = {
+                    score,
+                    correctCount,
+                    totalItems,
+                    allPassed,
+                    failedConcepts,
+                  };
+
+                  setResultAssessmentId(completedAssessmentId);
+                  setAssessmentResults(results);
+                  setResultModalOpen(true);
+                }
+              } catch (error) {
+                console.error("Error reopening assessment results:", error);
+              }
+            }}
+            size="sm"
+          >
+            View Results
+          </Button>
+        </Box>
+      )}
+
       <ChatInput
         input={input}
         setInput={setInput}
@@ -437,6 +754,135 @@ export default function ChatRefactored({
         setEnableWebSearch={setEnableWebSearch}
         onSubmit={handleSubmit}
       />
+
+      {currentAssessmentId && activeCourseId && user?.id && (
+        <AssessmentModal
+          isOpen={assessmentModalOpen}
+          onClose={() => {
+            setAssessmentModalOpen(false);
+          }}
+          assessmentId={currentAssessmentId}
+          courseId={activeCourseId}
+          userId={user.id}
+          onComplete={async (assessmentId, allPassed) => {
+            // Clear assessment state
+            setInProgressAssessmentId(null);
+            setInProgressAssessmentTopic(null);
+            setCurrentAssessmentId(null);
+
+            setCourses((prev) =>
+              prev.map((course) => {
+                if (course.id === activeCourseId) {
+                  const metadata = (course as any).metadata || {};
+                  const {
+                    in_progress_assessment_id,
+                    in_progress_assessment_topic,
+                    ...cleanedMetadata
+                  } = metadata;
+                  return {
+                    ...course,
+                    metadata: cleanedMetadata,
+                  };
+                }
+                return course;
+              })
+            );
+
+            setAssessmentModalOpen(false);
+          }}
+          onResultsReady={(assessmentId, results) => {
+            setAssessmentModalOpen(false);
+            setCompletedAssessmentId(assessmentId);
+            setResultAssessmentId(assessmentId);
+            setAssessmentResults(results);
+            setResultModalOpen(true);
+          }}
+        />
+      )}
+
+      {resultAssessmentId &&
+        activeCourseId &&
+        user?.id &&
+        assessmentResults && (
+          <AssessmentResultModal
+            isOpen={resultModalOpen}
+            onClose={() => {
+              setResultModalOpen(false);
+            }}
+            assessmentId={resultAssessmentId}
+            courseId={activeCourseId}
+            userId={user.id}
+            results={assessmentResults}
+            onReadyForRevision={async () => {
+              setInProgressAssessmentId(null);
+              setInProgressAssessmentTopic(null);
+              setCurrentAssessmentId(null);
+              setCompletedAssessmentId(null);
+
+              if (activeCourseId) {
+                try {
+                  const { data: courseData } = await supabase
+                    .from("courses")
+                    .select("metadata")
+                    .eq("id", activeCourseId)
+                    .single();
+
+                  if (courseData?.metadata) {
+                    const currentMetadata = courseData.metadata || {};
+                    const {
+                      in_progress_assessment_id,
+                      in_progress_assessment_topic,
+                      completed_assessment_id,
+                      ...cleanedMetadata
+                    } = currentMetadata;
+
+                    await supabase
+                      .from("courses")
+                      .update({ metadata: cleanedMetadata })
+                      .eq("id", activeCourseId);
+                  }
+                } catch (error) {
+                  console.error(
+                    "Error clearing completed assessment ID:",
+                    error
+                  );
+                }
+              }
+
+              setCourses((prev) =>
+                prev.map((course) => {
+                  if (course.id === activeCourseId) {
+                    const metadata = (course as any).metadata || {};
+                    const {
+                      in_progress_assessment_id,
+                      in_progress_assessment_topic,
+                      completed_assessment_id,
+                      ...cleanedMetadata
+                    } = metadata;
+                    return {
+                      ...course,
+                      metadata: cleanedMetadata,
+                    };
+                  }
+                  return course;
+                })
+              );
+
+              setResultModalOpen(false);
+              setResultAssessmentId(null);
+              setAssessmentResults(null);
+
+              try {
+                await handleSubmit(
+                  new Event("submit") as any,
+                  `__READY_FOR_REVISION__:${resultAssessmentId}`
+                );
+              } catch (error) {
+                console.error("Error triggering revision:", error);
+              }
+            }}
+          />
+        )}
     </Flex>
   );
 }

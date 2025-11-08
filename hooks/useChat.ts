@@ -60,16 +60,36 @@ export function useChat({
       return;
     }
 
-    setCourses((prev) =>
-      prev.map((course) =>
-        course.id === courseId
-          ? {
-              ...course,
-              history: [...course.history, { user: userMessage, ai: "" }],
-            }
-          : course
-      )
-    );
+    // Don't add special messages (like assessment results) to history
+    const isSpecialMessage =
+      userMessage === "__GREETING__" ||
+      userMessage === "__CONTINUE__" ||
+      userMessage.startsWith("__ASSESSMENT_RESULT__:");
+
+    if (!isSpecialMessage) {
+      setCourses((prev) =>
+        prev.map((course) =>
+          course.id === courseId
+            ? {
+                ...course,
+                history: [...course.history, { user: userMessage, ai: "" }],
+              }
+            : course
+        )
+      );
+    } else {
+      // For special messages, add an empty AI response entry so streaming works
+      setCourses((prev) =>
+        prev.map((course) =>
+          course.id === courseId
+            ? {
+                ...course,
+                history: [...course.history, { user: "", ai: "" }],
+              }
+            : course
+        )
+      );
+    }
 
     setLoading(true);
 
@@ -115,6 +135,10 @@ export function useChat({
         const { done, value } = await reader.read();
         if (done) {
           flushPending();
+          // For special messages, save the final response to history (without user message)
+          if (isSpecialMessage && aiResponse) {
+            updateCourseHistory(courseId, "", aiResponse);
+          }
           break;
         }
 
@@ -133,9 +157,9 @@ export function useChat({
           const jsonStr = afterData.slice(0, endIndex).trim();
           buffer = buffer.slice(dataIndex + 6 + endIndex + 2);
 
-            try {
-              const data = JSON.parse(jsonStr);
-              if (data.text) {
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.text) {
               pendingChars += data.text;
 
               if (pendingChars.length >= 15) {
@@ -143,10 +167,37 @@ export function useChat({
               } else if (!updateTimer) {
                 updateTimer = setTimeout(flushPending, 100);
               }
-              }
-            } catch (e) {
-              console.error("JSON parse error:", e);
             }
+
+            // Handle assessment ready signal (user needs to confirm)
+            if (data.type === "assessment_ready_signal") {
+              if (window.dispatchEvent) {
+                window.dispatchEvent(
+                  new CustomEvent("assessmentReadySignal", {
+                    detail: {
+                      topic: data.topic,
+                    },
+                  })
+                );
+              }
+            }
+
+            // Handle assessment ready event (after generation)
+            if (data.type === "assessment_ready" && data.assessmentId) {
+              if (window.dispatchEvent) {
+                window.dispatchEvent(
+                  new CustomEvent("assessmentReady", {
+                    detail: {
+                      assessmentId: data.assessmentId,
+                      topic: data.topic,
+                    },
+                  })
+                );
+              }
+            }
+          } catch (e) {
+            console.error("JSON parse error:", e);
+          }
 
           dataIndex = buffer.indexOf("data: ");
         }

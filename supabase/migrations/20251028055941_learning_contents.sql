@@ -37,10 +37,10 @@ CREATE TABLE assessments (
   assessment_type TEXT NOT NULL,
   status TEXT DEFAULT 'in_progress',
   total_items INTEGER,
-  completed_items INTEGER DEFAULT 0,
   overall_score DECIMAL,
   confidence_level DECIMAL,
   time_spent INTEGER,
+  metadata JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   completed_at TIMESTAMP WITH TIME ZONE
 );

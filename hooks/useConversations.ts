@@ -52,6 +52,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
         course_order: course.course_order,
         current_lesson_index: course.current_lesson_index,
         current_topic_index: course.current_topic_index,
+        metadata: course.metadata,
         history: [],
       }));
       setCourses(clientCourses);
@@ -394,7 +395,7 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
           setHistoryLoading(false);
           return existingCourse;
         }
-        }
+      }
 
       if (user?.id) {
         try {

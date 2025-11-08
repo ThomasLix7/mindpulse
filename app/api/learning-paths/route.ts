@@ -359,7 +359,7 @@ export async function GET(request: Request) {
     const { data: courses, error: coursesError } = await supabase
       .from("courses")
       .select(
-        "id, title, learning_path_id, course_order, curriculum, current_lesson_index, current_topic_index, current_topic_id, completed_topic_ids, created_at, updated_at"
+        "id, title, learning_path_id, course_order, curriculum, current_lesson_index, current_topic_index, current_topic_id, completed_topic_ids, metadata, created_at, updated_at"
       )
       .eq("user_id", userId)
       .order("learning_path_id, course_order", { ascending: true });

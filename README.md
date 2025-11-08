@@ -89,13 +89,17 @@ Tutor360 addresses these challenges through an AI-powered platform that combines
 ### 3. **Real-Time Adaptive Assessment**
 
 - Dynamic assessment generation based on learner performance
+- Multiple question types (multiple-choice, true/false, short answer, coding, fill-in-the-blank)
+- AI-powered evaluation with detailed feedback
+- Diagnostic summaries identifying mastered and failed concepts
+- Targeted revision with practice questions and step-by-step explanations
 - Skill gap identification and targeted content creation
 - Progressive difficulty adjustment
 - Performance-based advancement gates
 
 ### 4. **Intelligent Content Summarization**
 
-- Automatic summarization of course progress every 20 messages
+- Automatic summarization of course progress every 50 messages
 - Learning history compression for efficient memory usage
 - Context-aware memory recall for personalized guidance
 
@@ -274,6 +278,10 @@ A user creates a learning path by choosing a subject and setting a goal. The sys
 ### Assessment & Progress Tracking
 
 - **Structured Assessments**: AI-generated assessments that must be passed to advance
+- **Multiple Question Types**: Supports multiple-choice, true/false, short answer, coding exercises, and fill-in-the-blank
+- **Assessment Results Analysis**: Detailed evaluation with AI-generated feedback for each question
+- **Diagnostic Summaries**: Initial summary identifies mastered concepts and areas needing revision
+- **Targeted Revision**: Detailed revision content with practice questions and step-by-step explanations
 - **Skill Development Tracking**: Tracks skill development and updates learner profiles
 - **Progress Reinforcement**: Adapts to reinforce strengths and address weaknesses
 - **Goal Achievement**: Monitors progress toward learning goals and adjusts accordingly
@@ -367,13 +375,13 @@ Before you begin, ensure you have the following:
 
 5. **Run the development server**
 
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   # or
-   pnpm dev
-   ```
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+```
 
 6. **Open your browser**
 
@@ -388,7 +396,12 @@ tutor360/
 │   │   ├── chat/                 # Chat API endpoint
 │   │   ├── courses/              # Course management API
 │   │   ├── learning-paths/       # Learning path API
-│   │   └── memory/               # Memory management API
+│   │   ├── memory/               # Memory management API
+│   │   └── assessments/          # Assessment API endpoints
+│   │       ├── generate/         # Assessment generation
+│   │       ├── submit/           # Assessment submission
+│   │       └── [id]/             # Assessment retrieval
+│   │           └── summary/      # Assessment summary generation
 │   ├── login/                    # Login page
 │   ├── signup/                   # Signup page
 │   ├── mentor/                   # Main mentor interface
@@ -402,7 +415,9 @@ tutor360/
 │   ├── auth/                     # Authentication components
 │   ├── chat/                     # Chat interface components
 │   ├── ui/                       # UI primitives
-│   └── Mentor.tsx                # Main mentor component
+│   ├── Mentor.tsx                # Main mentor component
+│   ├── AssessmentModal.tsx       # Assessment taking interface
+│   └── AssessmentResultModal.tsx # Assessment results display
 ├── hooks/                        # Custom React hooks
 │   ├── useChat.ts                # Chat functionality hook
 │   ├── useConversations.ts       # Conversation management
@@ -643,6 +658,115 @@ const response = await fetch(`/api/learning-paths?userId=${userId}`, {
 const learningPaths = await response.json();
 ```
 
+### Assessments API
+
+**Endpoint**: `POST /api/assessments/generate`
+
+Generate a new assessment for a topic.
+
+**Request Body**:
+
+```typescript
+{
+  courseId: string;
+  userId: string;
+  topic: string;
+  lessonIndex: number;
+  topicIndex: number;
+  lessonTitle: string;
+}
+```
+
+**Response**:
+
+```typescript
+{
+  assessmentId: string;
+  items: AssessmentItem[];
+}
+```
+
+**Endpoint**: `POST /api/assessments/submit`
+
+Submit completed assessment for evaluation.
+
+**Request Body**:
+
+```typescript
+{
+  assessmentId: string;
+  courseId: string;
+  userId: string;
+  answers: Array<{ answer: string }>;
+}
+```
+
+**Response**:
+
+```typescript
+{
+  assessment: Assessment;
+  items: AssessmentItem[];
+  overall_score: number;
+}
+```
+
+**Endpoint**: `GET /api/assessments/[id]`
+
+Get assessment details and items.
+
+**Headers**:
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response**:
+
+```typescript
+{
+  assessment: Assessment;
+  items: AssessmentItem[];
+}
+```
+
+**Endpoint**: `POST /api/assessments/[id]/summary`
+
+Generate or retrieve assessment diagnostic summary.
+
+**Headers**:
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response**:
+
+```typescript
+{
+  summary: string;
+  cached: boolean;
+}
+```
+
+**Endpoint**: `PATCH /api/assessments/items/[id]`
+
+Update individual assessment item answer.
+
+**Request Body**:
+
+```typescript
+{
+  user_answer: string;
+}
+```
+
+**Headers**:
+
+```
+Authorization: Bearer <access_token>
+```
+
 ## 💡 Usage Examples
 
 ### Creating a Learning Path
@@ -753,7 +877,7 @@ All environment variables should be prefixed with `NEXT_PUBLIC_` for client-side
 Tutor360 implements a sophisticated dual-layer memory system:
 
 1. **Short-term Memory**: Conversations are stored in the `course_messages` table
-2. **Memory Summarization**: After every 20 messages, conversations are automatically summarized
+2. **Memory Summarization**: After every 50 messages, conversations are automatically summarized
 3. **Long-term Memory**: Important memories can be promoted to long-term storage
 4. **Vector Search**: Memories are embedded using Google Generative AI embeddings and stored in Supabase Vector Store
 5. **Memory Recall**: Relevant memories are retrieved based on semantic similarity and context

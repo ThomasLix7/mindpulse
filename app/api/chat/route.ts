@@ -165,6 +165,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { message, courseId, userId, enableWebSearch = true } = body;
 
+    const url = new URL(req.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+
     if (
       !message ||
       (message !== "__GREETING__" &&
@@ -218,9 +221,66 @@ export async function POST(req: Request) {
     let validatedUserId = userId;
     const isGreeting = message === "__GREETING__";
     const isContinue = message === "__CONTINUE__";
+    const isAssessmentResult = message.startsWith("__ASSESSMENT_RESULT__:");
+    const isReadyForRevision = message.startsWith("__READY_FOR_REVISION__:");
     const isSpecialMessage = isGreeting || isContinue;
 
-    if (!isSpecialMessage) {
+    let assessmentResultData = null;
+    let revisionAssessmentData = null;
+    if (isAssessmentResult) {
+      try {
+        const assessmentId = message.replace("__ASSESSMENT_RESULT__:", "");
+        const assessmentResponse = await fetch(
+          `${baseUrl}/api/assessments/${assessmentId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+        if (assessmentResponse.ok) {
+          const assessmentData = await assessmentResponse.json();
+          assessmentResultData = assessmentData;
+        } else {
+          console.error(
+            "[Chat API] Failed to fetch assessment:",
+            assessmentResponse.status
+          );
+        }
+      } catch (error) {
+        console.error("[Chat API] Error fetching assessment results:", error);
+      }
+    }
+
+    if (isReadyForRevision) {
+      try {
+        const assessmentId = message.replace("__READY_FOR_REVISION__:", "");
+        const assessmentResponse = await fetch(
+          `${baseUrl}/api/assessments/${assessmentId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+        if (assessmentResponse.ok) {
+          const assessmentData = await assessmentResponse.json();
+          revisionAssessmentData = assessmentData;
+        } else {
+          console.error(
+            "[Chat API] Failed to fetch assessment for revision:",
+            assessmentResponse.status
+          );
+        }
+      } catch (error) {
+        console.error(
+          "[Chat API] Error fetching assessment for revision:",
+          error
+        );
+      }
+    }
+
+    if (!isSpecialMessage && !isAssessmentResult && !isReadyForRevision) {
       try {
         await supabase.from("course_messages").insert({
           course_id: courseId,
@@ -258,7 +318,7 @@ export async function POST(req: Request) {
       const { data: course, error: courseError } = await supabase
         .from("courses")
         .select(
-          "title, description, curriculum, learning_path_id, course_order, current_lesson_index, current_topic_index"
+          "title, description, curriculum, learning_path_id, course_order, current_lesson_index, current_topic_index, metadata"
         )
         .eq("id", courseId)
         .eq("user_id", validatedUserId)
@@ -377,6 +437,20 @@ export async function POST(req: Request) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        let isClosed = false;
+
+        const safeEnqueue = (data: string) => {
+          try {
+            if (!isClosed) {
+              controller.enqueue(data);
+            }
+          } catch (error: any) {
+            if (error.code !== "ERR_INVALID_STATE") {
+              console.error("Error enqueueing data:", error);
+            }
+            isClosed = true;
+          }
+        };
         if (isSpecialMessage) {
           const courseTitle =
             courseInfo?.title?.replace(/^Course \d+:\s*/i, "") || "This Course";
@@ -428,6 +502,34 @@ Drive the conversation forward - you're the teacher, guide them proactively.`;
             const currentLesson = lessons[currentLessonIndex];
             const currentTopic = currentLesson?.topics?.[currentTopicIndex];
 
+            const continueMetadata = courseInfo?.metadata || {};
+            const continuePendingTopic =
+              continueMetadata.pending_assessment_topic;
+            const continueInProgressId =
+              continueMetadata.in_progress_assessment_id;
+            const continueInProgressTopic =
+              continueMetadata.in_progress_assessment_topic;
+
+            let hasInProgressAssessment = false;
+            if (continueInProgressId) {
+              const { data: assessmentCheck } = await supabase
+                .from("assessments")
+                .select("status")
+                .eq("id", continueInProgressId)
+                .eq("user_id", validatedUserId)
+                .single();
+
+              hasInProgressAssessment =
+                assessmentCheck?.status === "in_progress";
+            }
+
+            let continueAssessmentContext = "";
+            if (continuePendingTopic) {
+              continueAssessmentContext = `\n\n⚠️ CRITICAL: There is a PENDING ASSESSMENT for topic: "${continuePendingTopic}". The user needs to start this assessment before continuing. Welcome them back and remind them: "Welcome back! Before we continue, please complete the assessment for [topic name] to move forward. You can start it using the 'Start Assessment' button."`;
+            } else if (hasInProgressAssessment && continueInProgressTopic) {
+              continueAssessmentContext = `\n\n⚠️ CRITICAL: There is an IN-PROGRESS ASSESSMENT for topic: "${continueInProgressTopic}". The user started but hasn't completed it. Welcome them back and remind them: "Welcome back! Please complete the assessment for [topic name] before we continue. You can resume it from where you left off."`;
+            }
+
             systemContext = `You are an AI mentor. Welcome back the student.
 
 Course: **${courseDisplay}**
@@ -442,11 +544,13 @@ Current: Lesson ${currentLessonIndex + 1}${
 
 Recent context:
 ${relevantMemories || "No previous context."}
+${continueAssessmentContext}
 
-Be concise (1-2 short sentences). Briefly summarize their progress 
-and then IMMEDIATELY continue teaching - don't wait for questions. 
-Proactively push forward with explanations, questions, exercises, tasks, or assessments based on the current lesson and topic. 
-Take charge of the learning - guide, challenge, and advance them through the material actively.`;
+${
+  continueAssessmentContext
+    ? "IMPORTANT: Address the assessment first before continuing with teaching. Be friendly but clear that they need to complete it."
+    : "Be concise (1-2 short sentences). Briefly summarize their progress and then IMMEDIATELY continue teaching - don't wait for questions. Proactively push forward with explanations, questions, exercises, tasks, or assessments based on the current lesson and topic. Take charge of the learning - guide, challenge, and advance them through the material actively."
+}`;
           }
 
           let fullResponse = "";
@@ -458,15 +562,13 @@ Take charge of the learning - guide, challenge, and advance them through the mat
               fullResponse += text;
 
               if (text) {
-                controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
+                safeEnqueue(`data: ${JSON.stringify({ text })}\n\n`);
               }
             }
           } catch (streamError: any) {
             console.error("Error in streaming greeting:", streamError);
             fullResponse = streamError?.message || "An error occurred";
-            controller.enqueue(
-              `data: ${JSON.stringify({ text: fullResponse })}\n\n`
-            );
+            safeEnqueue(`data: ${JSON.stringify({ text: fullResponse })}\n\n`);
           }
 
           if (fullResponse) {
@@ -484,7 +586,16 @@ Take charge of the learning - guide, challenge, and advance them through the mat
 
           await updateCourseTimestamp(courseId, accessToken);
 
-          controller.close();
+          if (!isClosed) {
+            try {
+              controller.close();
+              isClosed = true;
+            } catch (error: any) {
+              if (error.code !== "ERR_INVALID_STATE") {
+                console.error("Error closing controller:", error);
+              }
+            }
+          }
           return;
         }
 
@@ -494,8 +605,92 @@ Take charge of the learning - guide, challenge, and advance them through the mat
         const currentLesson = lessons[currentLessonIndex];
         const currentTopic = currentLesson?.topics?.[currentTopicIndex];
 
+        const courseMetadata = courseInfo?.metadata || {};
+        let pendingAssessmentTopic = courseMetadata.pending_assessment_topic;
+        let inProgressAssessmentId = courseMetadata.in_progress_assessment_id;
+        let inProgressAssessmentTopic =
+          courseMetadata.in_progress_assessment_topic;
+
+        if (isAssessmentResult || isReadyForRevision) {
+          inProgressAssessmentId = null;
+          inProgressAssessmentTopic = null;
+          pendingAssessmentTopic = null;
+        }
+
+        let hasInProgressAssessment = false;
+        if (
+          inProgressAssessmentId &&
+          !isAssessmentResult &&
+          !isReadyForRevision
+        ) {
+          const { data: assessmentCheck } = await supabase
+            .from("assessments")
+            .select("status")
+            .eq("id", inProgressAssessmentId)
+            .eq("user_id", validatedUserId)
+            .single();
+
+          hasInProgressAssessment = assessmentCheck?.status === "in_progress";
+
+          if (
+            !hasInProgressAssessment &&
+            (inProgressAssessmentId || inProgressAssessmentTopic)
+          ) {
+            try {
+              const { data: courseData } = await supabase
+                .from("courses")
+                .select("metadata")
+                .eq("id", courseId)
+                .single();
+
+              if (courseData?.metadata) {
+                const currentMetadata = courseData.metadata || {};
+                const {
+                  in_progress_assessment_id: metaId,
+                  in_progress_assessment_topic: metaTopic,
+                  ...cleanedMetadata
+                } = currentMetadata;
+
+                if (metaId === inProgressAssessmentId) {
+                  await supabase
+                    .from("courses")
+                    .update({ metadata: cleanedMetadata })
+                    .eq("id", courseId);
+
+                  inProgressAssessmentId = null;
+                  inProgressAssessmentTopic = null;
+                }
+              }
+            } catch (error) {
+              console.error("[Chat API] Error clearing stale metadata:", error);
+            }
+          }
+        }
+
+        const assessmentTopic =
+          inProgressAssessmentTopic || pendingAssessmentTopic;
+        const hasPendingAssessment =
+          !!pendingAssessmentTopic && !isAssessmentResult;
+
+        let assessmentContext = "";
+        if (!isAssessmentResult) {
+          if (hasInProgressAssessment) {
+            assessmentContext = `\n\n⚠️ CRITICAL: There is an IN-PROGRESS ASSESSMENT for topic: "${assessmentTopic}". The user started but hasn't completed it. 
+- Do NOT continue teaching new concepts or signal [ASSESSMENT_READY]
+- Remind the user: "I notice you have an incomplete assessment for [topic name]. Please complete it before we continue. You can resume it from where you left off."
+- Answer any questions they have, but keep reminding them about the assessment
+- Only proceed with teaching after they complete the assessment`;
+          } else if (hasPendingAssessment) {
+            assessmentContext = `\n\n⚠️ CRITICAL: There is a PENDING ASSESSMENT for topic: "${pendingAssessmentTopic}". The user has not yet started this assessment.
+- Do NOT signal [ASSESSMENT_READY] again for this topic
+- Remind the user: "Before we continue, please complete the assessment for [topic name]. You can start it using the 'Start Assessment' button."
+- Answer any questions they have, but keep reminding them about the assessment
+- Only proceed with teaching after they complete the assessment`;
+          }
+        }
+
         let lessonContext = "";
-        if (currentLesson) {
+        if (currentLesson && !isAssessmentResult) {
           lessonContext = `\n\nCURRENT LESSON CONTEXT (STAY FOCUSED ON THIS):
 Lesson ${currentLessonIndex + 1}: ${currentLesson.title}
 ${currentLesson.description ? `Description: ${currentLesson.description}` : ""}
@@ -504,8 +699,13 @@ ${
     ? `Current Topic ${currentTopicIndex + 1}: ${currentTopic}`
     : `Topics: ${(currentLesson.topics || []).join(", ")}`
 }
+${assessmentContext}
 
-CRITICAL: You MUST stay on track with this lesson. Continue teaching, explaining, or practicing concepts from THIS lesson and topic. Do NOT jump to unrelated topics or general introductions. Progress through the lesson systematically.`;
+CRITICAL: You MUST stay on track with this lesson. ${
+            hasPendingAssessment || hasInProgressAssessment
+              ? "However, the assessment takes priority - address it first."
+              : "Continue teaching, explaining, or practicing concepts from THIS lesson and topic. Do NOT jump to unrelated topics or general introductions. Progress through the lesson systematically."
+          }`;
         }
 
         const systemContext = `You are an active, proactive AI mentor who drives learning forward. 
@@ -517,6 +717,32 @@ CRITICAL TRACKING REQUIREMENT:
 - Progress systematically through the lesson material
 - Do NOT jump to unrelated topics or general introductions
 - Keep advancing through the specific lesson content
+
+CONCEPT PROGRESSION WITHIN TOPICS:
+- Topics often contain multiple sub-concepts (e.g., "Python syntax and data structures" includes lists, dicts, tuples, sets)
+- Use the conversation history to track which concepts within the current topic have been covered
+- Teach concepts incrementally: explain one concept, validate understanding through questions/exercises, then move to the next
+- Reference what you've already taught in the conversation to avoid repetition and ensure progression
+- If a concept needs more explanation based on user responses, provide additional examples or clarification
+- Only move to the next concept when the current one is understood
+
+ASSESSMENT SIGNALING:
+- When you determine that ALL concepts within the current topic have been adequately covered and understood, signal readiness for assessment
+- Before signaling, say something like: "We've now covered all the concepts of [topic name]. Do you have any questions or anything that's unclear? If you feel confident, please complete the assessment before we move on to the next topic."
+- Then include this exact marker at the END of your response: [ASSESSMENT_READY]
+- Only signal [ASSESSMENT_READY] when:
+  1. You've covered all major concepts within the current topic
+  2. The user has demonstrated understanding through your questions/exercises
+  3. You're confident they're ready for a formal assessment
+- After signaling [ASSESSMENT_READY], wait for the assessment to be generated and completed before proceeding
+
+ASSESSMENT RESULT HANDLING:
+- When you receive assessment results, analyze them carefully
+- For the INITIAL summary (right after assessment completion): Provide a diagnostic summary only - what was mastered, what needs work, and brief explanations of errors. DO NOT include practice questions or detailed revision content.
+- When the user clicks "Ready for Revision" (indicated by a follow-up message after the initial summary): Provide detailed revision with practice questions, step-by-step explanations, and exercises focused on the failed concepts
+- For failed concepts: analyze the failed questions and user responses to identify knowledge gaps
+- After revision, a new assessment will be generated - continue this cycle until all concepts are mastered
+- When all assessment items pass, acknowledge success and prepare to move to the next topic/lesson
 
 CONVERSATION MEMORY REQUIREMENT:
 - The conversation history below shows previous exchanges - USE IT to follow up on questions you asked
@@ -530,15 +756,174 @@ then IMMEDIATELY follow up with related questions, exercises, deeper explanation
 or next steps based on the CURRENT LESSON/TOPIC (not random topics).
 
 When the user doesn't ask: Proactively teach, explain concepts, generate exercises, 
-ask comprehension questions, assign tasks, or provide assessments - but ALWAYS related to the CURRENT LESSON/TOPIC.
+ask comprehension questions, assign tasks - but ALWAYS related to the CURRENT LESSON/TOPIC.
 If you asked a question before, check if they answered it and build upon their response.
 
 Your role is to actively guide, challenge, and advance the student through the course material systematically. 
 Lead the learning - don't just respond, drive the progress - but STAY ON TRACK with the lesson and MAINTAIN CONVERSATION CONTINUITY.${lessonContext}`;
 
-        const enhancedMessage = `${systemContext}
+        let assessmentResultContext = "";
+        let revisionContext = "";
+        let isReadyForRevisionFlag = false;
+        if (isAssessmentResult) {
+          if (assessmentResultData) {
+            const { assessment, items } = assessmentResultData;
+            const passedItems = items.filter((item: any) => item.is_correct);
+            const failedItems = items.filter((item: any) => !item.is_correct);
+
+            const failedConcepts = assessment.metadata?.failed_concepts || [];
+            isReadyForRevisionFlag = !!assessment.metadata?.summary;
+
+            assessmentResultContext = `\n\n⚠️⚠️⚠️ ASSESSMENT RESULTS - PRIORITY #1 (IGNORE ALL OTHER ASSESSMENT WARNINGS) ⚠️⚠️⚠️
+
+The user has JUST COMPLETED an assessment for the topic: ${
+              assessment.metadata?.in_progress_assessment_topic ||
+              assessment.metadata?.topic ||
+              "current topic"
+            }
+
+Results:
+- Total items: ${items.length}
+- Passed: ${passedItems.length}
+- Failed: ${failedItems.length}
+- Score: ${assessment.overall_score}%
+- Status: ${assessment.status} (COMPLETED - NO LONGER IN PROGRESS)
+
+${
+  failedItems.length > 0
+    ? `FAILED ITEMS AND USER ANSWERS:
+${failedItems
+  .map(
+    (item: any, idx: number) =>
+      `Item ${idx + 1}: ${item.question_text}
+  Correct Answer: ${item.correct_answer}
+  User Answer: ${item.user_answer || "No answer"}
+  Error: ${item.error_type || "Incorrect"}
+  Concepts: ${(item.concepts || []).join(", ") || "Unknown"}`
+  )
+  .join("\n\n")}
+
+FAILED CONCEPTS THAT NEED REVISION: ${failedConcepts.join(", ")}
+
+${
+  isReadyForRevisionFlag
+    ? `YOUR TASK (READY FOR REVISION - IGNORE ANY INCOMPLETE ASSESSMENT WARNINGS):
+The user has clicked "Ready for Revision". The diagnostic summary already exists. Now provide detailed revision:
+
+1. Start with targeted revision focused on the failed concepts: ${failedConcepts.join(
+        ", "
+      )}
+2. Provide step-by-step explanations for each misunderstood concept
+3. Include practice questions and exercises for each concept
+4. Give clear examples and guidance
+5. Make it interactive and educational
+
+Go straight into the detailed revision content - do NOT repeat the diagnostic summary.`
+    : `YOUR TASK (DO THIS NOW - IGNORE ANY INCOMPLETE ASSESSMENT WARNINGS):
+1. Summarize the assessment results - what was mastered, what was misunderstood, what needs more practice
+2. Analyze the failed questions and user responses to identify knowledge gaps
+3. Explain what went wrong and why (briefly)
+4. List the concepts that need revision: ${failedConcepts.join(", ")}
+5. Be encouraging but clear about what needs improvement
+
+IMPORTANT: This is the INITIAL summary. DO NOT include practice questions, exercises, or detailed revision content. The user will click "Ready for Revision" to get the detailed revision with practice questions.`
+}`
+    : `ALL ITEMS PASSED! 
+
+Congratulations! The user has successfully mastered all concepts in this topic. Acknowledge their success and prepare to move to the next topic/lesson.`
+}
+`;
+          } else {
+            assessmentResultContext = `\n\n⚠️⚠️⚠️ ASSESSMENT RESULTS - PRIORITY #1 ⚠️⚠️⚠️
+
+The user has just completed an assessment. The assessment result data is being processed. 
+- Provide a summary acknowledging completion
+- Ask if they'd like to review any specific concepts
+- Prepare to provide revision guidance based on the results`;
+          }
+        }
+
+        if (isReadyForRevision && revisionAssessmentData) {
+          const { assessment, items } = revisionAssessmentData;
+          const failedItems = items.filter((item: any) => !item.is_correct);
+          const failedConcepts = assessment.metadata?.failed_concepts || [];
+
+          revisionContext = `\n\n⚠️⚠️⚠️ READY FOR REVISION - PRIORITY #1 ⚠️⚠️⚠️
+
+The user has clicked "Ready for Revision" for the assessment on: ${
+            assessment.metadata?.in_progress_assessment_topic ||
+            assessment.metadata?.topic ||
+            "current topic"
+          }
+
+Assessment Results:
+- Total items: ${items.length}
+- Failed: ${failedItems.length}
+- Score: ${assessment.overall_score}%
+
+FAILED ITEMS:
+${failedItems
+  .map(
+    (item: any, idx: number) =>
+      `Item ${idx + 1}: ${item.question_text}
+  Correct Answer: ${item.correct_answer}
+  User Answer: ${item.user_answer || "No answer"}
+  Error: ${item.error_type || "Incorrect"}
+  Concepts: ${(item.concepts || []).join(", ") || "Unknown"}`
+  )
+  .join("\n\n")}
+
+FAILED CONCEPTS THAT NEED REVISION: ${failedConcepts.join(", ")}
+
+YOUR TASK - PROVIDE DETAILED REVISION:
+1. Start with targeted revision focused on the failed concepts: ${failedConcepts.join(
+            ", "
+          )}
+2. Provide step-by-step explanations for each misunderstood concept
+3. Include practice questions and exercises for each concept
+4. Give clear examples and guidance
+5. Make it interactive and educational
+
+Go straight into the detailed revision content - do NOT repeat the diagnostic summary.`;
+        }
+
+        const enhancedMessage = isReadyForRevision
+          ? `${systemContext}
         
 ${relevantMemories ? relevantMemories : ""}
+
+${revisionContext}
+
+${assessmentContext}
+
+Current message: The user has clicked "Ready for Revision". IGNORE any incomplete assessment warnings. Focus ONLY on the REVISION section above and provide detailed revision with practice questions, step-by-step explanations, and exercises.`
+          : isAssessmentResult
+          ? `${systemContext}
+        
+${relevantMemories ? relevantMemories : ""}
+
+${assessmentResultContext}
+
+Current message: The user has just completed an assessment. IGNORE any incomplete assessment warnings. Focus ONLY on the ASSESSMENT RESULTS section above. 
+
+${
+  isReadyForRevisionFlag
+    ? `IMPORTANT: The user has clicked "Ready for Revision". The assessment summary already exists, so provide detailed revision with:
+- Practice questions and exercises focused on the failed concepts
+- Step-by-step explanations of the misunderstood concepts
+- Clear examples and guidance
+- Interactive practice to reinforce learning
+
+Do NOT repeat the diagnostic summary - go straight into the detailed revision content.`
+    : `This is the FIRST time generating the summary. Provide ONLY the diagnostic summary as instructed in the ASSESSMENT RESULTS section above. DO NOT include practice questions or detailed revision content.`
+}`
+          : `${systemContext}
+        
+${relevantMemories ? relevantMemories : ""}
+
+${assessmentResultContext}
+
+${assessmentContext}
 
 Current message: ${message}
 
@@ -553,11 +938,15 @@ ${
           const result = await chatSession.sendMessageStream(enhancedMessage);
 
           for await (const chunk of result.stream) {
-            const text = chunk.text();
+            let text = chunk.text();
             fullResponse += text;
 
+            if (text.includes("[ASSESSMENT_READY]")) {
+              text = text.replace(/\[ASSESSMENT_READY\]/g, "").trim();
+            }
+
             if (text) {
-              controller.enqueue(`data: ${JSON.stringify({ text })}\n\n`);
+              safeEnqueue(`data: ${JSON.stringify({ text })}\n\n`);
             }
           }
         } catch (streamError: any) {
@@ -565,25 +954,100 @@ ${
           fullResponse =
             streamError?.message ||
             "An error occurred while generating the response";
-          controller.enqueue(
-            `data: ${JSON.stringify({ text: fullResponse })}\n\n`
-          );
+          safeEnqueue(`data: ${JSON.stringify({ text: fullResponse })}\n\n`);
         }
+
+        const displayResponse = fullResponse
+          .replace(/\[ASSESSMENT_READY\]/g, "")
+          .trim();
+        const assessmentReady = fullResponse.includes("[ASSESSMENT_READY]");
 
         try {
           await supabase.from("course_messages").insert({
             course_id: courseId,
             role: "assistant",
-            content: fullResponse,
+            content: displayResponse,
             message_type: "text",
           });
         } catch (assistErr) {
           console.error("Error inserting assistant message:", assistErr);
         }
 
+        if (
+          isAssessmentResult &&
+          assessmentResultData?.assessment?.id &&
+          displayResponse &&
+          !isReadyForRevision
+        ) {
+          try {
+            const { data: currentAssessment } = await supabase
+              .from("assessments")
+              .select("metadata")
+              .eq("id", assessmentResultData.assessment.id)
+              .single();
+
+            const currentMetadata = currentAssessment?.metadata || {};
+            await supabase
+              .from("assessments")
+              .update({
+                metadata: {
+                  ...currentMetadata,
+                  summary: displayResponse,
+                },
+              })
+              .eq("id", assessmentResultData.assessment.id);
+          } catch (summarySaveError) {
+            console.error("Error saving assessment summary:", summarySaveError);
+          }
+        }
+
+        if (assessmentReady && currentTopic) {
+          try {
+            const { data: courseData } = await supabase
+              .from("courses")
+              .select("metadata")
+              .eq("id", courseId)
+              .single();
+
+            const currentMetadata = courseData?.metadata || {};
+
+            if (!currentMetadata.pending_assessment_topic) {
+              await supabase
+                .from("courses")
+                .update({
+                  metadata: {
+                    ...currentMetadata,
+                    pending_assessment_topic: currentTopic,
+                    pending_assessment_lesson_index: currentLessonIndex,
+                    pending_assessment_topic_index: currentTopicIndex,
+                  },
+                })
+                .eq("id", courseId);
+            }
+          } catch (metadataError) {
+            console.error("Error storing assessment readiness:", metadataError);
+          }
+
+          safeEnqueue(
+            `data: ${JSON.stringify({
+              type: "assessment_ready_signal",
+              topic: currentTopic,
+            })}\n\n`
+          );
+        }
+
         await updateCourseTimestamp(courseId, accessToken);
 
-        controller.close();
+        if (!isClosed) {
+          try {
+            controller.close();
+            isClosed = true;
+          } catch (error: any) {
+            if (error.code !== "ERR_INVALID_STATE") {
+              console.error("Error closing controller:", error);
+            }
+          }
+        }
       },
     });
 
