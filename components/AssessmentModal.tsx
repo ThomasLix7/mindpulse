@@ -347,16 +347,13 @@ export function AssessmentModal({
 
       if (updates.length === 0) return;
 
-      await Promise.all(
-        updates.map((update) =>
-          apiFetch(`/api/assessments/items/${update.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              user_answer: update.user_answer,
-            }),
-          })
-        )
-      );
+      // Use batch endpoint instead of individual calls
+      await apiFetch(`/api/assessments/items/batch`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          updates,
+        }),
+      });
     } catch (error) {
       console.error("Error saving answers:", error);
     }

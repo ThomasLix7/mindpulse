@@ -39,7 +39,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get assessment and items
     const { data: assessment, error: assessmentError } = await supabase
       .from("assessments")
       .select("*")
@@ -67,7 +66,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Extract concepts from assessment metadata
     const itemsWithConcepts = items.map((item) => {
       let concepts: string[] = [];
       const assessmentConcepts = assessment.metadata?.concepts;
@@ -77,7 +75,6 @@ export async function POST(req: Request) {
       return { ...item, concepts };
     });
 
-    // Evaluate answers
     const evaluationPrompt = `You are an expert educational assessor. Evaluate the following assessment answers with fairness and educational intent. Give partial credit when appropriate.
 
 ASSESSMENT ITEMS AND CORRECT ANSWERS:
@@ -159,7 +156,6 @@ OUTPUT FORMAT (JSON only):
       evaluationData = JSON.parse(jsonText);
     } catch (error) {
       console.error("Error parsing evaluation JSON:", error);
-      // Fallback: simple string matching evaluation
       const evaluations = itemsWithConcepts.map((item, idx) => {
         const userAnswer = answers[idx]?.answer || "";
         const isCorrect =
@@ -173,7 +169,6 @@ OUTPUT FORMAT (JSON only):
         };
       });
 
-      // Extract failed concepts from fallback
       const failedItems = evaluations.filter((e) => !e.is_correct);
       const failedConcepts = [
         ...new Set(failedItems.flatMap((e) => e.concepts || [])),
@@ -185,61 +180,70 @@ OUTPUT FORMAT (JSON only):
       };
     }
 
-    // Update assessment items with user answers and correctness
-    const updatePromises = evaluationData.evaluations.map(
-      (evaluation: any, evalIndex: number) => {
-        // Find item by ID (UUID) or by item order if item_id is "Item X" format
-        let item;
-        if (evaluation.item_id && evaluation.item_id.startsWith("Item ")) {
-          // Extract item number from "Item X" format
-          const itemNumber = parseInt(evaluation.item_id.replace("Item ", ""));
-          item = items.find(
-            (i) =>
-              i.item_order === itemNumber || items.indexOf(i) === itemNumber - 1
-          );
-        } else {
-          // Try to find by UUID
-          item = items.find((i) => i.id === evaluation.item_id);
-        }
+    const batchUpdates: Array<{
+      id: string;
+      user_answer: string;
+      is_correct: boolean;
+      error_type: string | null;
+    }> = [];
 
-        // Fallback to index-based matching if still not found
-        if (!item && evalIndex < items.length) {
-          item = items[evalIndex];
-        }
+    evaluationData.evaluations.forEach((evaluation: any, evalIndex: number) => {
+      let item;
+      if (evaluation.item_id && evaluation.item_id.startsWith("Item ")) {
+        const itemNumber = parseInt(evaluation.item_id.replace("Item ", ""));
+        item = items.find(
+          (i) =>
+            i.item_order === itemNumber || items.indexOf(i) === itemNumber - 1
+        );
+      } else {
+        item = items.find((i) => i.id === evaluation.item_id);
+      }
 
-        if (!item) {
-          console.warn(
-            `Item not found for evaluation: ${evaluation.item_id} at index ${evalIndex}`
-          );
-          return Promise.resolve();
-        }
+      if (!item && evalIndex < items.length) {
+        item = items[evalIndex];
+      }
 
-        const answerIndex = items.findIndex((i) => i.id === item.id);
-        const userAnswer = answers[answerIndex]?.answer || "";
+      if (!item) {
+        console.warn(
+          `Item not found for evaluation: ${evaluation.item_id} at index ${evalIndex}`
+        );
+        return;
+      }
 
-        // Use score if provided, otherwise use is_correct boolean
-        const score =
-          evaluation.score !== undefined
-            ? evaluation.score
-            : evaluation.is_correct
-            ? 1.0
-            : 0.0;
-        const isCorrect = score >= 0.5;
+      const answerIndex = items.findIndex((i) => i.id === item.id);
+      const userAnswer = answers[answerIndex]?.answer || "";
 
-        return supabase
+      const score =
+        evaluation.score !== undefined
+          ? evaluation.score
+          : evaluation.is_correct
+          ? 1.0
+          : 0.0;
+      const isCorrect = score >= 0.5;
+
+      batchUpdates.push({
+        id: item.id,
+        user_answer: userAnswer,
+        is_correct: isCorrect,
+        error_type: evaluation.error_type || null,
+      });
+    });
+
+    if (batchUpdates.length > 0) {
+      const updatePromises = batchUpdates.map((update) =>
+        supabase
           .from("assessment_items")
           .update({
-            user_answer: userAnswer,
-            is_correct: isCorrect,
-            error_type: evaluation.error_type || null,
+            user_answer: update.user_answer,
+            is_correct: update.is_correct,
+            error_type: update.error_type,
           })
-          .eq("id", item.id);
-      }
-    );
+          .eq("id", update.id)
+      );
 
-    await Promise.all(updatePromises);
+      await Promise.all(updatePromises);
+    }
 
-    // Calculate scores with partial credit
     const totalScore = evaluationData.evaluations.reduce(
       (sum: number, e: any) => {
         const itemScore =
@@ -255,9 +259,8 @@ OUTPUT FORMAT (JSON only):
         e.score !== undefined ? e.score : e.is_correct ? 1.0 : 0.0;
       return itemScore >= 0.5;
     }).length;
-    const allPassed = score >= 80; // Pass if score is 80% or higher (allows for partial credit)
+    const allPassed = score >= 80;
 
-    // Update assessment
     const { error: updateError } = await supabase
       .from("assessments")
       .update({
@@ -279,7 +282,6 @@ OUTPUT FORMAT (JSON only):
       );
     }
 
-    // Update course metadata: clear in-progress, store completed assessment ID
     if (courseId) {
       const { data: courseData, error: courseFetchError } = await supabase
         .from("courses")
@@ -297,13 +299,11 @@ OUTPUT FORMAT (JSON only):
           ...cleanedMetadata
         } = currentMetadata;
 
-        // Store completed assessment ID for later reopening
         const updatedMetadata = {
           ...cleanedMetadata,
           completed_assessment_id: assessmentId,
         };
 
-        // Only update if there was an in_progress_assessment_id to clear
         if (in_progress_assessment_id === assessmentId) {
           const { error: courseUpdateError } = await supabase
             .from("courses")
@@ -316,7 +316,6 @@ OUTPUT FORMAT (JSON only):
             console.error("Error updating course metadata:", courseUpdateError);
           }
         } else {
-          // Still update to store completed_assessment_id even if no in-progress was cleared
           const { error: courseUpdateError } = await supabase
             .from("courses")
             .update({
@@ -331,7 +330,6 @@ OUTPUT FORMAT (JSON only):
       }
     }
 
-    // Update course indices if all passed
     if (allPassed && courseId) {
       const { data: course } = await supabase
         .from("courses")
@@ -347,7 +345,6 @@ OUTPUT FORMAT (JSON only):
           (course.current_topic_index || 0) >= topics.length - 1;
 
         if (isLastTopic) {
-          // Move to next lesson
           await supabase
             .from("courses")
             .update({
@@ -356,7 +353,6 @@ OUTPUT FORMAT (JSON only):
             })
             .eq("id", courseId);
         } else {
-          // Move to next topic
           await supabase
             .from("courses")
             .update({
