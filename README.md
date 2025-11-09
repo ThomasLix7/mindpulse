@@ -7,7 +7,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-15.2-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
 [![Google Gemini](https://img.shields.io/badge/AI-Google%20Gemini-orange)](https://deepmind.google/technologies/gemini/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
 </div>
 
@@ -948,7 +948,7 @@ The platform automatically extracts valuable cross-platform user information dur
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is proprietary software. All rights reserved. Unauthorized use, copying, modification, or distribution is strictly prohibited. See the [LICENSE](LICENSE) file for details.
 
 ## 🆘 Support
 
