@@ -14,7 +14,7 @@ async function getCourseSummary(
     .eq("course_id", courseId)
     .eq("user_id", userId)
     .eq("is_longterm", false)
-    .filter("metadata->>'type'", "eq", "course_summary")
+    .eq("memory_type", "course_summary")
     .limit(1)
     .single();
 
@@ -189,49 +189,19 @@ export async function recallLongTermMemory(
   try {
     const client = createServerClient(accessToken);
 
-    const { data: columnData, error: columnError } = await client
+    const { data: longTermData, error } = await client
       .from("ai_memories")
       .select("id, content, metadata, created_at")
       .eq("user_id", userId)
       .eq("is_longterm", true)
       .order("created_at", { ascending: false });
 
-    if (columnError) {
-      console.error(
-        "Error fetching long-term memories by column:",
-        columnError
-      );
+    if (error) {
+      console.error("Error fetching long-term memories:", error);
+      return [];
     }
 
-    const { data: metadataData, error: metadataError } = await client
-      .from("ai_memories")
-      .select("id, content, metadata, created_at")
-      .eq("user_id", userId)
-      .filter("metadata->>'isLongterm'", "eq", "true")
-      .order("created_at", { ascending: false });
-
-    if (metadataError) {
-      console.error(
-        "Error fetching long-term memories by metadata:",
-        metadataError
-      );
-    }
-
-    let combinedData: any[] = [];
-
-    if (columnData && columnData.length > 0) {
-      combinedData = [...columnData];
-    }
-
-    if (metadataData && metadataData.length > 0) {
-      metadataData.forEach((item: any) => {
-        if (!combinedData.some((existing) => existing.id === item.id)) {
-          combinedData.push(item);
-        }
-      });
-    }
-
-    return mapToDocuments(combinedData);
+    return mapToDocuments(longTermData || []);
   } catch (error) {
     console.error("Error recalling long-term memory:", error);
     return [];

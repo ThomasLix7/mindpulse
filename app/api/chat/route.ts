@@ -293,8 +293,7 @@ export async function POST(req: Request) {
           supabase
         );
 
-        const shouldUpdateSummary =
-          userMessageCount === 1 || userMessageCount % 20 === 0;
+        const shouldUpdateSummary = userMessageCount % 2 === 0;
 
         if (shouldUpdateSummary && validatedUserId) {
           try {

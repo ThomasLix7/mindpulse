@@ -73,41 +73,21 @@ Tutor360 addresses these challenges through an AI-powered platform that combines
 
 ## 🚀 Key Innovations
 
-### 1. **Goal-Oriented Learning Path Generation**
+### 1. **AI-Generated Personalized Learning Paths**
 
-- AI analyzes user goals and current skill levels
-- Automatically generates structured learning paths with courses, lessons, and topics
-- Continuously adapts path based on progress and performance
+Unlike pre-built curricula, Tutor360 uses AI to dynamically generate complete learning paths (courses, lessons, topics) tailored to each learner's goals and skill gaps, continuously adapting as they progress.
 
-### 2. **Dual-Layer Memory System**
+### 2. **Dual-Layer Memory with Automatic Insight Extraction**
 
-- **Short-term Memory**: Real-time conversation context for immediate continuity
-- **Long-term Memory**: Persistent storage of important learnings across all sessions
-- **Vector Search Integration**: Semantic similarity search for relevant memory retrieval
-- **Memory Preservation**: Long-term memories persist even when conversations are deleted
+The platform implements a dual-layer memory system: short-term memory maintains conversation history with automatic summarization every 20 messages, while long-term memory automatically extracts cross-platform learning insights (learning style, preferences, strengths) during summarization, storing them with intelligent similarity-based merging to avoid duplicates and refine knowledge over time.
 
-### 3. **Real-Time Adaptive Assessment**
+### 3. **Proactive Conversational AI Tutoring**
 
-- Dynamic assessment generation based on learner performance
-- Multiple question types (multiple-choice, true/false, short answer, coding, fill-in-the-blank)
-- AI-powered evaluation with detailed feedback
-- Diagnostic summaries identifying mastered and failed concepts
-- Targeted revision with practice questions and step-by-step explanations
-- Skill gap identification and targeted content creation
-- Progressive difficulty adjustment
-- Performance-based advancement gates
+The AI tutor actively drives learning forward through systematic lesson progression, not just passive Q&A. It tracks conversation context, signals assessment readiness, and adapts teaching style based on learner responses and stored preferences.
 
-### 4. **Intelligent Content Summarization**
+### 4. **Adaptive Assessment with Targeted Revision**
 
-- Automatic summarization of course progress every 50 messages
-- Learning history compression for efficient memory usage
-- Context-aware memory recall for personalized guidance
-
-### 5. **Semantic Memory Retrieval**
-
-- Vector embeddings for all memories
-- Similarity-based retrieval for contextually relevant information
-- Fallback to text-based search when vectors unavailable
+Assessments are dynamically generated based on performance, with AI-powered evaluation providing diagnostic summaries and targeted revision content. The system creates practice questions and step-by-step explanations focused specifically on failed concepts, creating a cycle until mastery is achieved.
 
 ## 🏗️ Technical Architecture
 
@@ -259,11 +239,10 @@ A user creates a learning path by choosing a subject and setting a goal. The sys
 
 ### Intelligent Memory & Context
 
-- **Long-Term Memory System**: Persistent memory that remembers important information across all learning sessions
-- **Short-Term Context**: Real-time conversation history with course context for seamless learning continuity
-- **Vector Search**: Semantic search for finding relevant memories and learning content
+- **Short-Term Memory**: Real-time conversation history stored in `course_messages` with automatic summarization every 20 user messages for seamless learning continuity
+- **Long-Term Memory System**: Persistent memory that automatically extracts and merges cross-platform user insights during summarization
+- **Memory Recall**: Retrieval of relevant memories and learning content using semantic similarity search
 - **Memory Preservation**: Long-term memories persist even when conversations are deleted, ensuring no learning progress is lost
-- **Progress Summarization**: Automatic summarization of course progress and learning history
 
 ### Real-Time Adaptation
 
@@ -873,11 +852,9 @@ All environment variables should be prefixed with `NEXT_PUBLIC_` for client-side
 
 Tutor360 implements a sophisticated dual-layer memory system:
 
-1. **Short-term Memory**: Conversations are stored in the `course_messages` table
-2. **Memory Summarization**: After every 50 messages, conversations are automatically summarized
-3. **Long-term Memory**: Important memories can be promoted to long-term storage
-4. **Vector Search**: Memories are embedded using Google Generative AI embeddings and stored in Supabase Vector Store
-5. **Memory Recall**: Relevant memories are retrieved based on semantic similarity and context
+1. **Short-term Memory**: Conversation history stored in `course_messages` table, with automatic summarization every 20 user messages
+2. **Long-term Memory**: During summarization, AI extracts cross-platform user insights and automatically merges them with existing insights before storing as long-term memories
+3. **Memory Recall**: Relevant memories are retrieved based on semantic similarity and context using vector search
 
 ### Memory Preservation
 
@@ -893,6 +870,19 @@ Long-term memories are preserved even when conversations are deleted:
 1. **Vector Search** (Primary): Semantic similarity search using embeddings
 2. **Text Search** (Fallback): Keyword-based search when vectors unavailable
 3. **Context Filtering**: Results filtered by course and user context
+
+### Learning Insights (Long-term Memory)
+
+The platform automatically extracts valuable cross-platform user information during course summarization:
+
+- **Types of Insights**: Learning style, preferences, strengths, communication style
+- **Extraction Frequency**: Every 20 user messages (same as course summarization)
+- **Extraction Process**: During summarization, AI extracts insights from recent conversations
+- **Merging Process**: After extraction, each insight is compared with existing insights of the same type using cosine similarity:
+  - Similarity > 0.8: Updates existing insight (refines)
+  - Similarity ≤ 0.8: Inserts new insight (keeps both if related)
+- **Storage**: Merged insights are stored as long-term memories (`is_longterm: true`) with type-specific categorization (`memory_type`)
+- **Cross-Platform**: Insights are not course-specific (`course_id: null`) and apply across all learning experiences
 
 ## 📊 Impact & Benefits
 

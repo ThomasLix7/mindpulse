@@ -35,7 +35,7 @@ ALTER TABLE public.ai_memories ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "User access to own memories" ON public.ai_memories
 FOR ALL USING (
-  (metadata->>'userId')::uuid = auth.uid()
+  user_id = auth.uid()
 );
 
 CREATE POLICY "Public read access to session memories" ON public.ai_memories
