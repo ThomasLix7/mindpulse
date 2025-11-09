@@ -233,6 +233,8 @@ export function AssessmentModal({
       } else {
         loadAssessment();
       }
+    } else if (!isOpen) {
+      setSubmitting(false);
     }
   }, [isOpen, assessmentId]);
 
@@ -401,14 +403,12 @@ export function AssessmentModal({
 
       const data = await response.json();
 
-      // Close this modal first
-      onClose();
-
-      // Then notify parent that results are ready (this will open results modal)
+      // Prepare result modal, then close assessment modal
       onResultsReady(assessmentId, data);
+      onClose();
+      // Keep submitting true until modal closes to prevent re-rendering
     } catch (err: any) {
       setError(err.message || "Failed to submit assessment");
-    } finally {
       setSubmitting(false);
     }
   };

@@ -791,11 +791,14 @@ export default function ChatRefactored({
             setAssessmentModalOpen(false);
           }}
           onResultsReady={(assessmentId, results) => {
-            setAssessmentModalOpen(false);
             setCompletedAssessmentId(assessmentId);
             setResultAssessmentId(assessmentId);
             setAssessmentResults(results);
-            setResultModalOpen(true);
+            setAssessmentModalOpen(false);
+            setCurrentAssessmentId(null);
+            requestAnimationFrame(() => {
+              setResultModalOpen(true);
+            });
           }}
         />
       )}
