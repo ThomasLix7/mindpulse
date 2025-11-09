@@ -796,6 +796,8 @@ export default function ChatRefactored({
             setAssessmentResults(results);
             setAssessmentModalOpen(false);
             setCurrentAssessmentId(null);
+            setInProgressAssessmentId(null);
+            setInProgressAssessmentTopic(null);
             requestAnimationFrame(() => {
               setResultModalOpen(true);
             });
