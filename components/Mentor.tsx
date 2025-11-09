@@ -4,7 +4,7 @@ import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 import { useColorMode } from "@/components/ui/color-mode";
 
-import { useCourses } from "@/hooks/useConversations";
+import { useCourses } from "@/hooks/useCourses";
 import { useChat } from "@/hooks/useChat";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { MessageList } from "@/components/chat/MessageList";

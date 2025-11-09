@@ -99,6 +99,8 @@ function mapToDocuments(items: any[]): Document[] {
         pageContent: item.content,
         metadata: {
           ...item.metadata,
+          id: item.id,
+          memory_type: item.memory_type || null,
           timestamp: item.created_at
             ? new Date(item.created_at).getTime()
             : Date.now(),
@@ -173,37 +175,6 @@ export async function recallMemory(
     }
   } catch (error) {
     console.error("Error recalling memory:", error);
-    return [];
-  }
-}
-
-export async function recallLongTermMemory(
-  userId: string,
-  accessToken?: string
-): Promise<Document[]> {
-  if (!userId) {
-    console.error("User ID is required for long-term memory recall");
-    return [];
-  }
-
-  try {
-    const client = createServerClient(accessToken);
-
-    const { data: longTermData, error } = await client
-      .from("ai_memories")
-      .select("id, content, metadata, created_at")
-      .eq("user_id", userId)
-      .eq("is_longterm", true)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching long-term memories:", error);
-      return [];
-    }
-
-    return mapToDocuments(longTermData || []);
-  } catch (error) {
-    console.error("Error recalling long-term memory:", error);
     return [];
   }
 }

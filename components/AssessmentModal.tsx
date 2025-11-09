@@ -354,10 +354,10 @@ export function AssessmentModal({
 
       // Use batch endpoint instead of individual calls
       await apiFetch(`/api/assessments/items/batch`, {
-        method: "PATCH",
-        body: JSON.stringify({
+            method: "PATCH",
+            body: JSON.stringify({
           updates,
-        }),
+            }),
       });
     } catch (error) {
       console.error("Error saving answers:", error);

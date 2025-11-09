@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Heading,
@@ -10,15 +10,17 @@ import {
   Stack,
   Flex,
 } from "@chakra-ui/react";
-import { getCurrentUser } from "@/utils/supabase-client";
+import { getCurrentUser, supabase } from "@/utils/supabase-client";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
 interface Memory {
-  userMessage: string;
-  aiResponse: string;
+  userMessage?: string;
+  aiResponse?: string;
+  content?: string;
   timestamp: number;
-  type: string;
+  type?: string;
+  memoryType?: string | null;
   id?: string;
 }
 
@@ -26,28 +28,60 @@ export default function LongTermMemories() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMemories, setLoadingMemories] = useState(false);
-  const [memories, setMemories] = useState<Memory[]>([]);
+  const [allMemories, setAllMemories] = useState<Memory[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedType, setSelectedType] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [forgettingMemory, setForgettingMemory] = useState<string | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { user, error } = await getCurrentUser();
-      setUser(user);
-      setLoading(false);
-
-      if (user) {
-        loadMemories("all memories");
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    allMemories.forEach((memory) => {
+      if (memory.memoryType) {
+        types.add(memory.memoryType);
+      } else {
+        types.add("conversation");
       }
-    };
+    });
+    return Array.from(types).sort();
+  }, [allMemories]);
 
-    checkAuth();
-  }, []);
-  const loadMemories = async (query = searchQuery) => {
-    if (!user?.id) {
+  const filteredMemories = useMemo(() => {
+    let filtered = allMemories;
+
+    if (selectedType) {
+      if (selectedType === "conversation") {
+        filtered = filtered.filter((memory) => !memory.memoryType);
+      } else {
+        filtered = filtered.filter(
+          (memory) => memory.memoryType === selectedType
+        );
+      }
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((memory) => {
+        if (memory.userMessage?.toLowerCase().includes(query)) return true;
+        if (memory.aiResponse?.toLowerCase().includes(query)) return true;
+        if (memory.content?.toLowerCase().includes(query)) return true;
+        if (memory.memoryType?.toLowerCase().includes(query)) return true;
+        return false;
+      });
+    }
+
+    return filtered;
+  }, [allMemories, searchQuery, selectedType]);
+
+  const loadMemories = async (query = searchQuery, userId?: string) => {
+    const targetUserId = userId || user?.id;
+    if (!targetUserId) {
       setError("You must be logged in to view long-term memories");
+      return;
+    }
+
+    if (allMemories.length > 0 || loadingMemories) {
       return;
     }
 
@@ -55,13 +89,25 @@ export default function LongTermMemories() {
     setError("");
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        setError("Authentication required");
+        setLoadingMemories(false);
+        return;
+      }
+
       const response = await fetch(
-        `/api/memory?userId=${encodeURIComponent(
-          user.id
-        )}&query=${encodeURIComponent(query || "all memories")}`,
+        `/api/memory?userId=${encodeURIComponent(targetUserId)}`,
         {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
         }
       );
 
@@ -72,20 +118,55 @@ export default function LongTermMemories() {
       const data = await response.json();
 
       if (data.success && Array.isArray(data.memories)) {
-        setMemories(data.memories);
-        `Loaded ${data.memories.length} long-term memories`;
+        setAllMemories(data.memories);
       } else {
         setError(data.error || "No memories found");
-        setMemories([]);
+        setAllMemories([]);
       }
     } catch (error) {
       console.error("Error loading memories:", error);
       setError((error as Error).message || "Failed to load memories");
-      setMemories([]);
+      setAllMemories([]);
     } finally {
       setLoadingMemories(false);
     }
   };
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { user: currentUser, error } = await getCurrentUser();
+
+      if (error) {
+        console.error("Auth check error:", error);
+      }
+
+      setUser(currentUser);
+      setLoading(false);
+
+      if (!currentUser?.id) {
+        router.push("/login");
+        return;
+      }
+
+      loadMemories("all memories", currentUser.id);
+    };
+
+    checkAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        setUser(null);
+        setAllMemories([]);
+        router.push("/login");
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const forgetMemory = async (memoryId: string) => {
     if (!user?.id || !memoryId) {
@@ -97,13 +178,27 @@ export default function LongTermMemories() {
     setError("");
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        setError("Authentication required");
+        setForgettingMemory(null);
+        return;
+      }
+
       const response = await fetch(
         `/api/memory?userId=${encodeURIComponent(
           user.id
         )}&memoryId=${encodeURIComponent(memoryId)}`,
         {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
         }
       );
 
@@ -114,7 +209,7 @@ export default function LongTermMemories() {
       const data = await response.json();
 
       if (data.success) {
-        setMemories(memories.filter((memory) => memory.id !== memoryId));
+        setAllMemories(allMemories.filter((memory) => memory.id !== memoryId));
       } else {
         setError(data.error || "Failed to forget memory");
       }
@@ -128,12 +223,12 @@ export default function LongTermMemories() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    loadMemories();
+    // Search is now client-side, no API call needed
   };
 
   const handleLoadAll = () => {
     setSearchQuery("");
-    loadMemories("all memories");
+    setSelectedType(null);
   };
 
   const formatDate = (timestamp: number) => {
@@ -175,15 +270,11 @@ export default function LongTermMemories() {
       color="white"
     >
       <Heading mb={6}>Your Long-Term Memories</Heading>
-      <Text mb={4}>
-        This page shows memories that have been saved to your long-term memory
-        storage. These memories persist across all your courses.
-      </Text>
 
       {/* Search form */}
       <Box mb={6}>
         <form onSubmit={handleSearch}>
-          <Flex gap={2}>
+          <Flex gap={2} mb={3}>
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -208,10 +299,32 @@ export default function LongTermMemories() {
             </Button>
           </Flex>
         </form>
-        <Text fontSize="sm" color="gray.400" mt={1}>
-          Tip: Leave the search box empty or click "Show All" to view all your
-          saved memories
-        </Text>
+
+        {/* Type filters */}
+        {availableTypes.length > 0 && (
+          <Flex gap={2} flexWrap="wrap" mb={2}>
+            <Button
+              size="sm"
+              variant={selectedType === null ? "solid" : "outline"}
+              colorScheme={selectedType === null ? "blue" : "gray"}
+              onClick={() => setSelectedType(null)}
+            >
+              All Types
+            </Button>
+            {availableTypes.map((type) => (
+              <Button
+                key={type}
+                size="sm"
+                variant={selectedType === type ? "solid" : "outline"}
+                colorScheme={selectedType === type ? "purple" : "gray"}
+                onClick={() => setSelectedType(type)}
+                textTransform="capitalize"
+              >
+                {type.replace("_", " ")}
+              </Button>
+            ))}
+          </Flex>
+        )}
       </Box>
 
       {error && (
@@ -225,7 +338,7 @@ export default function LongTermMemories() {
           <div className="spinner-grow" role="status"></div>
           <Text mt={2}>Loading memories...</Text>
         </Box>
-      ) : memories.length === 0 ? (
+      ) : filteredMemories.length === 0 ? (
         <Box p={4} bg="blue.900" borderRadius="md" color="blue.100">
           <Text>No long-term memories found. This could mean that:</Text>
           <Text mt={2}>
@@ -242,12 +355,15 @@ export default function LongTermMemories() {
       ) : (
         <Stack direction="column" gap={4}>
           <Text mb={2} fontWeight="bold">
-            Found {memories.length} memories{" "}
-            {searchQuery ? `matching "${searchQuery}"` : ""}
+            Found {filteredMemories.length}{" "}
+            {searchQuery ? `matching "${searchQuery}"` : ""} memories
+            {searchQuery &&
+              allMemories.length > filteredMemories.length &&
+              ` (out of ${allMemories.length} total)`}
           </Text>
-          {memories.map((memory, index) => (
+          {filteredMemories.map((memory, index) => (
             <Box
-              key={index}
+              key={memory.id || index}
               p={4}
               borderRadius="md"
               boxShadow="md"
@@ -255,18 +371,61 @@ export default function LongTermMemories() {
               borderColor="gray.700"
               bg="gray.800"
             >
-              <Text fontWeight="bold" color="blue.300" mb={1}>
-                You: {memory.userMessage}
-              </Text>
-              <Box
-                bg="gray.700"
-                p={3}
-                borderRadius="md"
-                mb={2}
-                color="blue.200"
-              >
-                <ReactMarkdown>{memory.aiResponse}</ReactMarkdown>
-              </Box>
+              {memory.memoryType ? (
+                // Learning Insight
+                <>
+                  <Flex align="center" gap={2} mb={2}>
+                    <Text
+                      px={3}
+                      py={1}
+                      borderRadius="md"
+                      bg="rgba(147, 51, 234, 0.2)"
+                      color="purple.300"
+                      fontSize="sm"
+                      fontWeight="semibold"
+                      textTransform="capitalize"
+                    >
+                      {memory.memoryType.replace("_", " ")}
+                    </Text>
+                  </Flex>
+                  <Box
+                    bg="gray.700"
+                    p={3}
+                    borderRadius="md"
+                    mb={2}
+                    color="blue.200"
+                  >
+                    <ReactMarkdown>{memory.content}</ReactMarkdown>
+                  </Box>
+                </>
+              ) : memory.userMessage && memory.aiResponse ? (
+                // Conversation Memory
+                <>
+                  <Text fontWeight="bold" color="blue.300" mb={1}>
+                    You: {memory.userMessage}
+                  </Text>
+                  <Box
+                    bg="gray.700"
+                    p={3}
+                    borderRadius="md"
+                    mb={2}
+                    color="blue.200"
+                  >
+                    <ReactMarkdown>{memory.aiResponse}</ReactMarkdown>
+                  </Box>
+                </>
+              ) : (
+                // Fallback: Content-only
+                <Box
+                  bg="gray.700"
+                  p={3}
+                  borderRadius="md"
+                  mb={2}
+                  color="blue.200"
+                >
+                  <ReactMarkdown>{memory.content}</ReactMarkdown>
+                </Box>
+              )}
               <Flex justifyContent="space-between" alignItems="center">
                 <Text fontSize="sm" color="gray.400">
                   Saved on: {formatDate(memory.timestamp)}

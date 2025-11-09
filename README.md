@@ -396,8 +396,7 @@ tutor360/
 │   └── AssessmentResultModal.tsx # Assessment results display
 ├── hooks/                        # Custom React hooks
 │   ├── useChat.ts                # Chat functionality hook
-│   ├── useConversations.ts       # Conversation management
-│   └── useMemory.ts              # Memory operations
+│   └── useCourses.ts             # Course management hook
 ├── lib/                          # Library code
 │   ├── gemini.ts                 # Gemini AI configuration
 │   ├── vectorstore.ts            # Vector store setup
@@ -406,8 +405,7 @@ tutor360/
 │   ├── memory/                   # Memory utilities
 │   │   ├── index.ts              # Memory exports
 │   │   ├── recall.ts             # Memory recall functions
-│   │   ├── save.ts               # Memory save functions
-│   │   └── summary.ts            # Memory summarization
+│   │   └── summary.ts            # Course summary & learning insights
 │   ├── supabase-client.ts        # Supabase client (client-side)
 │   ├── supabase-server.ts        # Supabase client (server-side)
 │   └── api-fetch.ts              # API fetch wrapper
@@ -772,28 +770,19 @@ const learningPath = {
 ### Using Memory Functions
 
 ```typescript
-import { saveToLongTermMemory, recallLongTermMemory } from "@/utils/memory";
+import { recallMemory } from "@/utils/memory";
 
-// Save a memory
-await saveToLongTermMemory(userId, {
-  userMessage: "I prefer learning through examples",
-  aiResponse: "I'll use more examples in my explanations.",
-});
-
-// Recall memories
-const memories = await recallLongTermMemory(
-  courseId,
-  query,
-  userId,
-  accessToken
-);
+// Recall memories for a course (used internally by chat API)
+const memories = await recallMemory(courseId, query, userId, accessToken);
 ```
+
+**Note:** Course summaries and learning insights are generated automatically during chat conversations. Long-term memories are managed through the `/api/memory` endpoint.
 
 ### Custom Hooks
 
 ```typescript
 import { useChat } from "@/hooks/useChat";
-import { useConversations } from "@/hooks/useConversations";
+import { useCourses } from "@/hooks/useCourses";
 
 // Use chat hook
 const { input, setInput, loading, handleSubmit } = useChat({

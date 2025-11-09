@@ -188,38 +188,38 @@ OUTPUT FORMAT (JSON only):
     }> = [];
 
     evaluationData.evaluations.forEach((evaluation: any, evalIndex: number) => {
-      let item;
-      if (evaluation.item_id && evaluation.item_id.startsWith("Item ")) {
-        const itemNumber = parseInt(evaluation.item_id.replace("Item ", ""));
-        item = items.find(
-          (i) =>
-            i.item_order === itemNumber || items.indexOf(i) === itemNumber - 1
-        );
-      } else {
-        item = items.find((i) => i.id === evaluation.item_id);
-      }
+        let item;
+        if (evaluation.item_id && evaluation.item_id.startsWith("Item ")) {
+          const itemNumber = parseInt(evaluation.item_id.replace("Item ", ""));
+          item = items.find(
+            (i) =>
+              i.item_order === itemNumber || items.indexOf(i) === itemNumber - 1
+          );
+        } else {
+          item = items.find((i) => i.id === evaluation.item_id);
+        }
 
-      if (!item && evalIndex < items.length) {
-        item = items[evalIndex];
-      }
+        if (!item && evalIndex < items.length) {
+          item = items[evalIndex];
+        }
 
-      if (!item) {
-        console.warn(
-          `Item not found for evaluation: ${evaluation.item_id} at index ${evalIndex}`
-        );
+        if (!item) {
+          console.warn(
+            `Item not found for evaluation: ${evaluation.item_id} at index ${evalIndex}`
+          );
         return;
-      }
+        }
 
-      const answerIndex = items.findIndex((i) => i.id === item.id);
-      const userAnswer = answers[answerIndex]?.answer || "";
+        const answerIndex = items.findIndex((i) => i.id === item.id);
+        const userAnswer = answers[answerIndex]?.answer || "";
 
-      const score =
-        evaluation.score !== undefined
-          ? evaluation.score
-          : evaluation.is_correct
-          ? 1.0
-          : 0.0;
-      const isCorrect = score >= 0.5;
+        const score =
+          evaluation.score !== undefined
+            ? evaluation.score
+            : evaluation.is_correct
+            ? 1.0
+            : 0.0;
+        const isCorrect = score >= 0.5;
 
       batchUpdates.push({
         id: item.id,
@@ -239,9 +239,9 @@ OUTPUT FORMAT (JSON only):
             error_type: update.error_type,
           })
           .eq("id", update.id)
-      );
+    );
 
-      await Promise.all(updatePromises);
+    await Promise.all(updatePromises);
     }
 
     const totalScore = evaluationData.evaluations.reduce(

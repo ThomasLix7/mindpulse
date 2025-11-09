@@ -5,10 +5,6 @@ import { apiFetch } from "@/utils/api-fetch";
 import { Course } from "@/types/chat";
 import { useLearningData } from "@/app/mentor/LearningDataContext";
 
-function generateCourseId(): string {
-  return `course-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
-}
-
 function isLongtermMemory(item: any): boolean {
   return Boolean(
     item.is_longterm === true ||
@@ -162,24 +158,6 @@ export function useCourses(courseId?: string, isHomePage?: boolean) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId, user?.id, authChecked]);
-
-  const loadCourses = async (userId?: string) => {
-    setHistoryLoading(true);
-
-    try {
-      if (userId) {
-        await fetchCoursesFromServer(userId);
-      }
-    } catch (error) {
-      console.error("Error loading courses:", error);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
-  const fetchCoursesFromServer = async (userId: string) => {
-    // No-op: data comes from context
-  };
 
   const createNewCourse = async () => {
     if (historyLoading || !user?.id) return null;

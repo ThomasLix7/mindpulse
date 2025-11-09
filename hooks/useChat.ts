@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { signOut } from "@/utils/supabase-client";
 import { apiFetch } from "@/utils/api-fetch";
 
 interface UseChatProps {
@@ -33,7 +31,6 @@ export function useChat({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [enableWebSearch, setEnableWebSearch] = useState<boolean>(false);
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent, message?: string) => {
     e.preventDefault();
@@ -223,16 +220,6 @@ export function useChat({
     }
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    createNewCourse();
-    router.push("/login");
-  };
-
-  const handleLogin = () => {
-    router.push("/login");
-  };
-
   return {
     input,
     setInput,
@@ -240,7 +227,5 @@ export function useChat({
     enableWebSearch,
     setEnableWebSearch,
     handleSubmit,
-    handleLogout,
-    handleLogin,
   };
 }
