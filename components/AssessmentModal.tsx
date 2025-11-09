@@ -267,7 +267,7 @@ export function AssessmentModal({
 
       // Restore previous answers
       const restoredAnswers: Record<number, any> = {};
-      let firstUnansweredIndex = 0;
+      let firstUnansweredIndex: number | null = null;
       (data.items || []).forEach((item: any, index: number) => {
         if (item.user_answer) {
           let restoredAnswer = item.user_answer;
@@ -283,12 +283,15 @@ export function AssessmentModal({
             }
           }
           restoredAnswers[index] = restoredAnswer;
-        } else if (firstUnansweredIndex === 0 && !item.user_answer) {
+        } else if (firstUnansweredIndex === null && !item.user_answer) {
           firstUnansweredIndex = index;
         }
       });
       setAnswers(restoredAnswers);
-      setCurrentIndex(firstUnansweredIndex);
+      // Go to first unanswered item, or last item if all answered
+      setCurrentIndex(
+        firstUnansweredIndex ?? Math.max(0, (data.items || []).length - 1)
+      );
 
       // Adjust textarea heights for restored answers
       setTimeout(() => {

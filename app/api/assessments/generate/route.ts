@@ -125,7 +125,7 @@ OUTPUT FORMAT (JSON only, no markdown):
     {
       "item_order": 1,
       "item_type": "multiple_choice" | "short_answer" | "coding_exercise" | "true_false" | "fill_blank",
-      "question_text": "The question or exercise prompt. For multiple_choice, include options in the question text like: 'What is X? A) Option1 B) Option2 C) Option3 D) Option4'",
+      "question_text": "The question or exercise prompt. For multiple_choice, ALWAYS include all options directly in the question text in this exact format: 'Question text? A) Option1 B) Option2 C) Option3 D) Option4'. Do NOT separate options into different fields.",
       "correct_answer": "For multiple_choice: the correct option letter (A, B, C, or D) or the full correct option text. For other types: the correct answer or expected output",
       "concepts": ["concept1", "concept2"],
       "level": "beginner" | "intermediate" | "advanced"
