@@ -1,13 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
-import { OpenAIEmbeddings } from "@langchain/openai";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Document } from "@langchain/core/documents";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const googleApiKey = process.env.GOOGLE_API_KEY;
-const openaiApiKey = process.env.OPENAI_API_KEY;
 
 export async function getVectorStore(accessToken?: string) {
   try {
@@ -33,7 +31,6 @@ export async function getVectorStore(accessToken?: string) {
       embeddings = new GoogleGenerativeAIEmbeddings({
         apiKey: googleApiKey,
         modelName: "gemini-embedding-001",
-        maxRetries: 0,
       });
 
       embeddings.embedQuery = async function (text: string) {
@@ -70,12 +67,8 @@ export async function getVectorStore(accessToken?: string) {
 
         return embeddings;
       };
-    } else if (openaiApiKey) {
-      embeddings = new OpenAIEmbeddings({
-        openAIApiKey: openaiApiKey,
-      });
     } else {
-      console.error("No embedding API keys available");
+      console.error("No Google API key available");
       console.log(
         "⚠️ FALLBACK: No embedding models available - using direct Supabase client without embeddings"
       );

@@ -6,6 +6,7 @@
 
 [![Next.js](https://img.shields.io/badge/Next.js-15.2-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
+[![LangChain](https://img.shields.io/badge/LangChain-1.0-blue)](https://js.langchain.com/)
 [![Google Gemini](https://img.shields.io/badge/AI-Google%20Gemini-orange)](https://deepmind.google/technologies/gemini/)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
@@ -163,7 +164,7 @@ graph TB
 ### AI & ML
 
 - **AI Model**: Google Gemini (via @google/generative-ai)
-- **LLM Framework**: LangChain 0.3.19
+- **LLM Framework**: LangChain 1.0.3
 - **Vector Store**: Supabase Vector Store (via @langchain/community)
 - **Embeddings**: Google Generative AI embeddings
 

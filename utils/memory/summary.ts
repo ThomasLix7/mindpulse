@@ -217,12 +217,33 @@ async function processLearningInsights(
         let mostSimilarId: string | null = null;
 
         for (const memory of existingMemories) {
-          if (!memory.vector || memory.vector.length === 0) continue;
+          if (!memory.vector) continue;
+
+          // Parse vector - handle different formats (array, string, object)
+          let vector: number[] = null as any;
+          if (Array.isArray(memory.vector)) {
+            vector = memory.vector;
+          } else if (typeof memory.vector === "string") {
+            try {
+              vector = JSON.parse(memory.vector);
+            } catch (e) {
+              continue;
+            }
+          } else if (
+            memory.vector &&
+            typeof memory.vector === "object" &&
+            "toArray" in memory.vector
+          ) {
+            vector = memory.vector.toArray();
+          }
+
+          if (!vector || !Array.isArray(vector) || vector.length === 0 || vector.length !== insightEmbedding.length) {
+            continue;
+          }
 
           // Calculate cosine similarity
           const dotProduct = insightEmbedding.reduce(
-            (sum: number, val: number, i: number) =>
-              sum + val * memory.vector[i],
+            (sum: number, val: number, i: number) => sum + val * vector[i],
             0
           );
           const insightMagnitude = Math.sqrt(
@@ -232,7 +253,7 @@ async function processLearningInsights(
             )
           );
           const memoryMagnitude = Math.sqrt(
-            memory.vector.reduce(
+            vector.reduce(
               (sum: number, val: number) => sum + val * val,
               0
             )
