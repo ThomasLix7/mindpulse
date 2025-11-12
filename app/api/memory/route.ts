@@ -101,15 +101,15 @@ export async function GET(request: Request) {
       );
     }
 
-    try {
+      try {
       const supabaseServer = await createServerClient(accessToken);
 
       const { data: memoriesData, error: memoriesError } = await supabaseServer
-        .from("ai_memories")
+          .from("ai_memories")
         .select("id, content, metadata, created_at, memory_type")
-        .eq("user_id", userId)
-        .eq("is_longterm", true)
-        .order("created_at", { ascending: false });
+          .eq("user_id", userId)
+          .eq("is_longterm", true)
+          .order("created_at", { ascending: false });
 
       if (memoriesError) {
         console.error("Error querying long-term memories:", memoriesError);
@@ -117,33 +117,33 @@ export async function GET(request: Request) {
           { error: "Failed to retrieve long-term memories", success: false },
           { status: 500 }
         );
-      }
+        }
 
       if (!memoriesData || memoriesData.length === 0) {
-        return NextResponse.json({
-          memories: [],
-          count: 0,
-          success: true,
-        });
-      }
+          return NextResponse.json({
+            memories: [],
+            count: 0,
+            success: true,
+          });
+        }
 
       const processedMemories = memoriesData.map((item) => {
-        try {
-          const content = item.content;
+          try {
+            const content = item.content;
           const memoryType = item.memory_type;
           const timestamp =
             item.metadata?.timestamp || new Date(item.created_at).getTime();
 
           // Learning insights (long-term memories with memory_type)
           if (memoryType && memoryType !== "course_summary") {
-            return {
-              content,
+              return {
+                content,
               memoryType,
               timestamp,
-              id: item.id,
+                id: item.id,
               type: "insight",
-            };
-          }
+              };
+            }
 
           // Conversation memories (format: "USER: ...\nAI: ...")
           const parts = content.split("\nAI: ");
@@ -164,24 +164,24 @@ export async function GET(request: Request) {
           return {
             content,
             timestamp,
-            id: item.id,
+              id: item.id,
             memoryType: memoryType || null,
-          };
-        } catch (error) {
-          console.error("Error parsing memory:", error);
-          return {
-            content: item.content,
-            timestamp:
+            };
+          } catch (error) {
+            console.error("Error parsing memory:", error);
+            return {
+              content: item.content,
+              timestamp:
               item.metadata?.timestamp || new Date(item.created_at).getTime(),
-            id: item.id,
+              id: item.id,
             memoryType: item.memory_type || null,
-          };
-        }
-      });
+              };
+            }
+          });
 
-      return NextResponse.json({
-        memories: processedMemories,
-        count: processedMemories.length,
+          return NextResponse.json({
+            memories: processedMemories,
+            count: processedMemories.length,
         success: true,
       });
     } catch (error) {

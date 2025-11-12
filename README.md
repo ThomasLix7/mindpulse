@@ -219,13 +219,54 @@ A user creates a learning path by choosing a subject and setting a goal. The sys
 
 ## 🎬 Demo & Screenshots
 
-> **Note**: Screenshots or demo videos comming soon.
->
-> - Learning path creation interface
-> - AI tutor conversation interface
-> - Progress tracking dashboard
-> - Memory management interface
-> - Assessment generation examples
+### Learning Path Creation
+
+<div align="center">
+
+![Learning Path Creation](public/learning_path_creation.png)
+
+_Create personalized learning paths based on goals and skill gaps_
+
+</div>
+
+### AI Tutor Interaction
+
+<div align="center">
+
+![Tutor Interaction](public/tutor_interaction.png)
+
+_Real-time conversational AI tutoring interface_
+
+</div>
+
+### Assessment System
+
+<div align="center">
+
+![Assessment Ready](public/assessment_ready.png)
+_Assessment generation and readiness interface_
+
+![Assessment Items - Multiple Choice](public/assessment-items.png)
+_Multiple-choice question interface_
+
+![Assessment Items - Short Answer](public/assessment-items-answer.png)
+_Short answer question interface_
+
+<img src="public/assessment-results.gif" alt="Assessment Results" />
+
+_Assessment results and feedback display_
+
+</div>
+
+### Long-Term Memory Management
+
+<div align="center">
+
+![Long-Term Memory Management](public/longterm-memory-management.png)
+
+_View and manage your persistent long-term memories with search and type filtering_
+
+</div>
 
 **Live Demo**: []
 
